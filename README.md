@@ -38,7 +38,7 @@ The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on
 - It contains individual VGC and JIT simulation files, as produced by the above **.py** files.
 
 ### *model_traces* subfolder
-- It contains NUTS fits for the proof-of-concept models. Because these posterior sample files are large (>1GB), they are saved in an OSF repository as specified above.
+- It contains NUTS fits for the proof-of-concept models. Because these posterior sample files are large (>6GB), they are saved in an OSF repository as specified above.
 
 ### *models* and *vgc_project* subfolders
 - They contain functions needed to run VGC and JIT simulations. They are adopted from their corresponding papers: https://www.nature.com/articles/s41586-022-04743-9, https://arxiv.org/abs/2601.14514. 
