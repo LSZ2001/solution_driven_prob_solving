@@ -1,0 +1,2951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Become an alchemist!</title>
+  <!-- jsPsych 6.x core + plugins (CDN) -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script src="jspsych-6.3.1/jspsych.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-call-function.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-external-html.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-fullscreen.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-html-button-response.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-html-keyboard-response.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-html-slider-response.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-instructions.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-image-button-response.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-survey-multi-choice.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-survey-html-form.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-survey-likert.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-survey-text.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-preload.js"></script>
+    <script src="jspsych-6.3.1/plugins/jspsych-external-html.js"></script>
+    <link href="jspsych-6.3.1/css/jspsych.css" rel="stylesheet" type="text/css"></link>
+
+  <style>
+    #equation-builder { padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+    .eq-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .eq-row input.sym { width: 3ch; text-align: center; }
+    .eq-row button { padding: 2px 6px; }
+    #add-row { margin-top: 8px; }
+    .stim-box { padding: 8px; border: 1px solid #ccc; border-radius: 8px; }
+  .equation-list {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;  /* left-aligned vertical list */
+    font-size: 24px;
+    line-height: 1.5;
+  }
+  .equation-row {margin: 4px 0;}
+  .num-black {color: black;}
+  .num-gray {color: #E5E4E2;}
+  .num-green { color: #4CBB17; }
+  .num-red   { color: red; }
+  /* optional: make hover feel clickable */
+  .eq-token { cursor: default; }
+  .equation-list { pointer-events: auto; }
+  .eq-token { pointer-events: auto; }
+
+  .center-cheatsheet {
+  display: flex;
+  justify-content: center;   /* centers the cheat-sheet block */
+}
+
+/* override ONLY inside instruction cheat-sheet area */
+.center-cheatsheet .equation-list {
+  align-items: center;       /* center each equation row */
+}
+
+
+
+  /* Vertically center instruction pages */
+  .rules-block {
+    display: inline-block;   /* shrink to content width */
+    text-align: left;        /* left-align text */
+    margin: 0 auto;          /* center the block horizontally */
+    line-height: 1.6;
+  }
+  .rules-block div {
+    margin-bottom: 0.4em;
+  }
+
+    .jspsych-display-element{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;   /* vertical */
+    align-items:center;       /* horizontal */
+    min-height:90vh;         /* full viewport */
+  }
+  /* optional: limit line-width and centre text */
+  .jspsych-content{
+    max-width:1200px;
+    text-align:center;
+  }
+
+  
+  .two-panel-stimulus {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .panel-left,
+  .panel-right {
+    flex: 1;
+    min-height: 200px; /* adjust as needed */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+    padding: 8px;
+  }
+  .panel-left-content-line {
+    font-size: 24px;
+    line-height: 1.5;
+    text-align: center;
+    width: 100%;
+    word-wrap: break-word; /* wrap inside the panel */
+  }
+  .panel-left-circle-wrapper {
+    position: relative;
+    width: 250px;   /* adjust as needed */
+    height: 250px;  /* square area for the ring */
+  }
+  .panel-left-circle-letter {
+    position: absolute;
+    transform: translate(-50%, -50%); /* center on computed position */
+    font-size: 32px;
+  }
+  /* makes masked products look intentional */
+  /* Invisible placeholder but full-size hover target */
+  .rhs-masked {
+    /*color: transparent;       /* hides the ? */
+    text-shadow: none;
+    cursor: help;
+  }
+
+  /* keep arrow spacing stable even when product text is empty */
+  .rhs-product {
+    display: inline-block;
+    min-width: 1ch;
+  }
+
+  /* Ensure hidden panel cannot keep pointer state alive */
+  .panel-hidden {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .panel-visible {
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  /* highlight missing blanks on submit */
+  .sym.missing-blank {
+    outline: 3px solid #b00020;
+    border-color: #b00020;
+    background: rgba(176, 0, 32, 0.08);
+  }
+
+
+
+
+  </style>
+</head>
+<body>
+<div id="jspsych-experiment"></div>
+
+  <script>
+
+
+    var display_format = "color"; // or "visualsearch"
+    var test_cond = 0;
+    var train_cond = test_cond;
+    var test_trial_time_limit = 60; // seconds; -1 means no time limit
+    const iti_duration = 1000;//ms
+    const est_comp_time = 35; // min
+
+
+
+    /*******************
+     * CONFIG
+     *******************/
+    // Allowed symbols: set exactly what a participant may enter (ONE char per blank).
+    // Examples:
+    //   'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    //   'ABCDEF0123456789'
+    //   'ABCD'  (small set)
+    const ALLOWED_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const allowedSet = new Set(ALLOWED_CHARS.split(''));
+    // Build a pattern like ^[ABCDEF0123456789]$
+    const patternRegexStr = '^[' + ALLOWED_CHARS.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + ']$';
+    const validateOneChar = ch => ch && allowedSet.has(ch.toUpperCase());
+
+
+    // Consent and fullscreen
+    function check_consent(elem) {
+    if (document.getElementById('consent_checkbox').checked) { return true; }
+    else {
+        alert("If you wish to participate, you must check the box.");
+        return false;
+    }
+    return false;
+    };
+    var consent = {
+        type: "external-html",
+        url: 'consent_exp2.html',
+        cont_btn: 'start',
+        force_refresh: true,
+        check_fn: check_consent
+    }
+    var full_screen = {
+        type: "fullscreen",
+        fullscreen_mode: true,
+        message: `<p>To avoid distration, this game must be completed in <b>full screen</b> mode by clicking the button below.</p>
+                    <p>Please <b>do not exit full-screen mode until the end</b> of the game.</p><br>`,
+        button_label: "Enter full screen"
+    }
+    var objects_img = ["img/alchemist.png","img/type_equations.png","img/visual_search_ring_easy.png","img/visual_search_ring_new.png"];
+    var preload = {
+        type: "preload",
+        images: objects_img
+    };
+
+
+    function createCountdownOverlay(id) {
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.position = 'fixed';
+        el.style.top = '16px';
+        el.style.right = '18px';
+        el.style.zIndex = 9999;
+        el.style.fontSize = '48px';
+        el.style.fontWeight = '700';
+        el.style.fontFamily = 'Arial, sans-serif';
+        el.style.color = '#111';
+        el.style.background = 'rgba(255,255,255,0.85)';
+        el.style.padding = '6px 12px';
+        el.style.borderRadius = '10px';
+        el.style.border = '1px solid #ddd';
+        document.body.appendChild(el);
+      }
+      return el;
+    }
+
+    function showCenterMessageOverlay(id, htmlText) {
+      // full-screen overlay
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.position = 'fixed';
+        el.style.inset = '0';
+        el.style.zIndex = 10000;
+        el.style.background = 'rgba(255,255,255,0.95)';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.textAlign = 'center';
+        el.style.fontSize = '34px';
+        el.style.fontFamily = 'Arial, sans-serif';
+        el.style.color = '#111';
+        document.body.appendChild(el);
+      }
+      el.innerHTML = `<div style="max-width: 900px; padding: 20px;">${htmlText}</div>`;
+      el.style.display = 'flex';
+      return el;
+    }
+
+    function hideOverlay(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
+
+    function removeOverlay(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+
+    // Check if submitted solution is part of the cached solution
+    function containsOnlySpecificValues(arr, allowedValues=[0,2,6]) {
+        // Use the every() method to check if all elements satisfy the condition.
+        // The condition is that the allowedValues array must include the current element.
+        return arr.every(element => allowedValues.includes(element));
+    }
+
+    // Parse response into equations
+        /**
+     * Turn an equation dict {x,y,z} into a canonical key "min,max,z"
+     * so x+y=z and y+x=z map to the same key.
+     */
+    function eqDictToKey(eq) {
+    const a = Math.min(eq.x, eq.y);
+    const b = Math.max(eq.x, eq.y);
+    return `${a},${b},${eq.z}`;
+    }
+
+    /**
+     * Parse "A + B = D" (tolerates "->" too) into {A,B,C} letters.
+     * Returns null if parsing fails.
+     */
+    function parseSubmittedEqString(s) {
+    if (typeof s !== 'string') return null;
+    const t = s.trim().toUpperCase();
+
+    // Accept either "=" or "->" or "→"
+    // Example matches: "A + B = D", "A+B->D", "A + B → D"
+    const m = t.match(/^([A-ZΑ-Ω])\s*\+\s*([A-ZΑ-Ω])\s*(?:=|->|→|➡|→)\s*([A-ZΑ-Ω])$/);
+    if (!m) return null;
+
+    return { A: m[1], B: m[2], C: m[3] };
+    }
+
+    /**
+     * Convert letters to ints using letter_to_int.
+     * Returns null if any letter isn't found.
+     */
+    function lettersToInts(parsed, letter_to_int) {
+    if (!parsed) return null;
+    const x = letter_to_int[parsed.A];
+    const y = letter_to_int[parsed.B];
+    const z = letter_to_int[parsed.C];
+    if (x === undefined || y === undefined || z === undefined) return null;
+    return { x, y, z };
+    }
+
+    function buildKeyToIndexMap(equations) {
+    const keyToIndex = new Map();
+    for (let i = 0; i < equations.length; i++) {
+        const key = eqDictToKey(equations[i]);
+        if (!keyToIndex.has(key)) keyToIndex.set(key, i);
+    }
+    return keyToIndex;
+    }
+
+    /**
+     * Main function:
+     * submitted_eqs_rearranged_sorted: array of strings like ["A + B = D", ...]
+     * letter_to_int: mapping like {A:0, B:1, ...}
+     * equations: array of dicts like [{x:0,y:1,z:3}, ...]
+     *
+     * Returns sorted array of indices, using -1 for "not found / invalid".
+     */
+    function computeResponseEquationIndicesSorted(
+    submitted_eqs_rearranged_sorted,
+    letter_to_int,
+    equations,
+    sort_and_push_neg1
+    ) {
+    // Build key -> index map for fast lookup
+    const keyToIndex = new Map();
+    for (let i = 0; i < equations.length; i++) {
+        const key = eqDictToKey(equations[i]);
+        // If duplicates exist, keep the first index (or change to last if you prefer)
+        if (!keyToIndex.has(key)) keyToIndex.set(key, i);
+    }
+
+    // Map each submitted eq to an index (or -1)
+    const indices = (submitted_eqs_rearranged_sorted || []).map((eqStr) => {
+        const parsed = parseSubmittedEqString(eqStr);
+        const ints = lettersToInts(parsed, letter_to_int);
+        if (!ints) return -1;
+
+        // Canonicalize LHS
+        const a = Math.min(ints.x, ints.y);
+        const b = Math.max(ints.x, ints.y);
+        const key = `${a},${b},${ints.z}`;
+
+        return keyToIndex.has(key) ? keyToIndex.get(key) : -1;
+    });
+
+    // // Sort numeric, ascending (keeps -1s at the front)
+    // indices.sort((p, q) => p - q);
+    // Sort numeric, ascending (keeps -1s at the end)
+    if(sort_and_push_neg1){
+        indices.sort((p, q) => (p === -1) - (q === -1) || (p - q));
+    }
+    return indices;
+    }
+
+
+    // Check if solution submitted is legit.
+    /**
+     * Validates submitted equations with optional order constraint.
+     *
+     * Rules:
+     * (1) Every submitted equation must be in equations (no -1).
+     * (2a) If equation_order_matters == false:
+     *      For any initially-absent object used as reactant anywhere, it must be produced somewhere (order ignored).
+     * (2b) If equation_order_matters == true:
+     *      When processing rows top-to-bottom, any initially-absent reactant must already be available
+     *      (produced by an earlier valid equation). Quantities ignored.
+     * (3) goal_object must be produced at least once (RHS of some VALID submitted equation).
+     *
+     * Returns rich diagnostics.
+     */
+    function validateSubmittedEquations(
+    submitted_eqs_rearranged_sorted,
+    letter_to_int,
+    equations,
+    color_vector,
+    goal_object,
+    equation_order_matters = true // NEW optional arg
+    ) {
+    const submitted = Array.isArray(submitted_eqs_rearranged_sorted)
+        ? submitted_eqs_rearranged_sorted
+        : [];
+
+    const keyToIndex = buildKeyToIndexMap(equations);
+
+    const response_equation_indices = [];
+    const invalid_rows = [];
+    const invalid_equations = [];
+
+    // Track products/reactants for the "order doesn't matter" mode
+    const usedAsReactant = new Set();
+    const producedAsProduct = new Set();
+
+    // Track whether goal_object is produced
+    let goal_produced = false;
+
+    // For order-matters mode: availability set (ints that are currently "available")
+    const available = new Set();
+    for (let i = 0; i < color_vector.length; i++) {
+        if (color_vector[i] === 1) available.add(i);
+    }
+
+    // Diagnostics for order-matters violations
+    const order_violations = []; // array of {rowIdx, missingReactants:[...], equation:String}
+
+    for (let rowIdx = 0; rowIdx < submitted.length; rowIdx++) {
+        const s = submitted[rowIdx];
+
+        const parsed = parseSubmittedEqString(s);
+        const ints = lettersToInts(parsed, letter_to_int);
+
+        if (!ints) {
+        response_equation_indices.push(-1);
+        invalid_rows.push(rowIdx);
+        invalid_equations.push(String(s));
+        continue;
+        }
+
+        // Canonicalize x,y for matching allowed equations
+        const a = Math.min(ints.x, ints.y);
+        const b = Math.max(ints.x, ints.y);
+        const key = `${a},${b},${ints.z}`;
+
+        const idx = keyToIndex.has(key) ? keyToIndex.get(key) : -1;
+        response_equation_indices.push(idx);
+
+        if (idx === -1) {
+        invalid_rows.push(rowIdx);
+        invalid_equations.push(String(s));
+        continue; // do not let invalid equations affect availability/production
+        }
+
+        // VALID equation: update shared tracking
+        usedAsReactant.add(ints.x);
+        usedAsReactant.add(ints.y);
+        producedAsProduct.add(ints.z);
+
+        if (ints.z === goal_object) {
+        goal_produced = true;
+        }
+
+        // If order matters, check reactants are available *before* producing product
+        if (equation_order_matters) {
+        const missing = [];
+        // Only care about initially-absent objects; initially-present always OK.
+        // But practically, availability already encodes that, so we check availability directly.
+        if (!available.has(ints.x) && color_vector[ints.x] === 0) missing.push(ints.x);
+        if (!available.has(ints.y) && color_vector[ints.y] === 0) missing.push(ints.y);
+
+        if (missing.length > 0) {
+            order_violations.push({
+            rowIdx,
+            missingReactants: missing,
+            equation: String(s)
+            });
+        }
+
+        // After the check, we "produce" the product and make it available for later rows
+        available.add(ints.z);
+        }
+    }
+
+    // Rule (1): no invalid equations
+    const hasInvalid = invalid_rows.length > 0;
+
+    // Rule (2): feasibility of absent reactants
+    let missing_produced_ints = [];
+
+    if (!equation_order_matters) {
+        // Order-free mode: any absent reactant used must be produced somewhere
+        usedAsReactant.forEach((objInt) => {
+        const initiallyPresent = color_vector[objInt] === 1;
+        if (!initiallyPresent) {
+            const everProduced = producedAsProduct.has(objInt);
+            if (!everProduced) missing_produced_ints.push(objInt);
+        }
+        });
+        missing_produced_ints.sort((p, q) => p - q);
+    } else {
+        // Order-matters mode: violations are recorded per row; we can also aggregate missing ints
+        const agg = new Set();
+        order_violations.forEach(v => v.missingReactants.forEach(x => agg.add(x)));
+        missing_produced_ints = Array.from(agg).sort((p, q) => p - q);
+    }
+
+    // Sort indices as requested
+    // const response_equation_indices_sorted = [...response_equation_indices].sort((p, q) => p - q);
+    // Sort numeric, ascending (keeps -1s at the end)
+    const response_equation_indices_sorted = [...response_equation_indices].sort((p, q) => (p === -1) - (q === -1) || (p - q));
+
+    // Rule (3): goal must be produced
+    const order_ok = equation_order_matters ? (order_violations.length === 0) : true;
+
+    const is_legit = !hasInvalid &&
+                    missing_produced_ints.length === 0 &&
+                    goal_produced &&
+                    order_ok;
+
+    return {
+        is_legit,
+        response_equation_indices,
+        response_equation_indices_sorted,
+        invalid_rows,
+        invalid_equations,
+        // In order-free mode: "absent used but never produced"
+        // In order-matters mode: union of "absent used before available"
+        missing_produced_ints,
+        // Only meaningful when equation_order_matters === true
+        order_violations,
+        goal_produced
+    };
+    }
+
+
+    // Visibility tracker for new hard condition
+    // colorVector: same vector used to generate the stimulus
+    function setupEquationHoverReveal(colorVector) {
+    var container = document.getElementById('equation-list');
+    if (!container) {
+        console.warn('setupEquationHoverReveal: #equation-list not found');
+        return;
+    }
+
+    // If you run multiple trials, prevent duplicate listeners
+    if (container.dataset.hoverBound === '1') return;
+    container.dataset.hoverBound = '1';
+
+    function setTokenColor(tokenEl, isHovering) {
+        var n = parseInt(tokenEl.getAttribute('data-int'), 10);
+        if (Number.isNaN(n)) return;
+
+        // Always return to black on mouseout
+        if (!isHovering) {
+        tokenEl.classList.remove('num-green', 'num-red');
+        tokenEl.classList.add('num-black');
+        return;
+        }
+
+        // On hover: green if present, red if absent
+        var present = colorVector[n] === 1;
+
+        tokenEl.classList.remove('num-black', 'num-gray', 'num-green', 'num-red');
+        tokenEl.classList.add(present ? 'num-green' : 'num-red');
+    }
+
+    container.addEventListener('mouseover', function(e) {
+        var t = e.target;
+        if (t && t.classList && t.classList.contains('eq-token')) {
+        setTokenColor(t, true);
+        }
+    });
+
+    container.addEventListener('mouseout', function(e) {
+        var t = e.target;
+        if (t && t.classList && t.classList.contains('eq-token')) {
+        setTokenColor(t, false);
+        }
+    });
+    }
+
+
+    /**
+ * Attaches hover reveal + logging to #equation-list.
+ *
+ * Returns an object:
+ * {
+ *   getLogs: () => hoverLogsArray
+ * }
+ *
+ * You call this in on_load, then on_finish you store getLogs().
+ */
+function setupEquationHoverRevealAndLogging(colorVector, containerId='equation-list') {
+  const container = document.getElementById(containerId);
+  if (!container) {
+    console.warn('Hover logger: container not found:', containerId);
+    return null;
+  }
+
+  // prevent duplicate binding
+  if (container.__hoverLogger) return container.__hoverLogger;
+
+  const t0 = performance.now();
+  const logs = [];
+  const activeStart = new Map(); // Element -> start time
+  let nOver = 0, nOut = 0;
+
+  function setTokenColor(el, hovering) {
+    const n = parseInt(el.dataset.int, 10);
+    if (Number.isNaN(n)) return;
+
+    if (!hovering) {
+      el.classList.remove('num-green', 'num-red');
+      el.classList.add('num-black');
+      return;
+    }
+
+    const present = colorVector[n] === 1;
+    el.classList.remove('num-black', 'num-gray', 'num-green', 'num-red');
+    el.classList.add(present ? 'num-green' : 'num-red');
+  }
+
+  function getDisplayedEquationString(tokenEl) {
+    const row = tokenEl.closest('.equation-row');
+    if (!row) return '';
+    const toks = row.querySelectorAll('.eq-token');
+    const letters = Array.from(toks).map(t => t.dataset.letter || t.textContent);
+    return letters.length >= 3 ? `${letters[0]} + ${letters[1]} = ${letters[2]}` : row.textContent.trim();
+  }
+
+  container.addEventListener('pointerover', (e) => {
+    const t = e.target;
+    if (!(t && t.classList && t.classList.contains('eq-token'))) return;
+    nOver++;
+    if (!activeStart.has(t)) activeStart.set(t, performance.now());
+    setTokenColor(t, true);
+  });
+
+  container.addEventListener('pointerout', (e) => {
+    const t = e.target;
+    if (!(t && t.classList && t.classList.contains('eq-token'))) return;
+    nOut++;
+
+    const start = activeStart.get(t);
+    if (start !== undefined) {
+      const end = performance.now();
+      activeStart.delete(t);
+
+      logs.push({
+        displayed_letter: t.dataset.letter || t.textContent,
+        letter_idx: parseInt(t.dataset.int, 10),
+        object_is_present: colorVector[parseInt(t.dataset.int, 10)],
+        displayed_equation: getDisplayedEquationString(t),
+        equation_idx: parseInt(t.dataset.eqIndex, 10),
+        hover_onset_ms: start - t0,
+        hover_duration_ms: end - start,
+        displayed_equation_row: parseInt(t.dataset.displayRow, 10),
+        letter_in_equation_role: t.dataset.role
+      });
+    }
+    setTokenColor(t, false);
+  });
+
+  function finalize() {
+    // close any active hover at submit time
+    const now = performance.now();
+    activeStart.forEach((start, t) => {
+      logs.push({
+        letter: t.dataset.letter || t.textContent,
+        int_index: parseInt(t.dataset.int, 10),
+        displayed_equation: getDisplayedEquationString(t),
+        equation_index: parseInt(t.dataset.eqIndex, 10),
+        hover_onset_ms: start - t0,
+        hover_duration_ms: now - start,
+        display_row: parseInt(t.dataset.displayRow, 10),
+        role: t.dataset.role
+      });
+    });
+    activeStart.clear();
+  }
+
+  const logger = {
+    logs,          // <-- IMPORTANT: array reference you will save later
+    finalize,
+    debug: () => ({ nOver, nOut, nLogs: logs.length })
+  };
+
+  container.__hoverLogger = logger;
+  return logger;
+}
+
+function clearMissingBlankHighlights(scopeEl) {
+  const scope = scopeEl || document;
+  scope.querySelectorAll('input.sym.missing-blank').forEach(el => {
+    el.classList.remove('missing-blank');
+  });
+}
+
+function findFirstIncompleteBlank(rowsEl) {
+  const rows = Array.from(rowsEl.querySelectorAll('.eq-row'));
+  for (const row of rows) {
+    const inputs = Array.from(row.querySelectorAll('input.sym'));
+    const missing = inputs.filter(inp => !(inp.value && inp.value.trim().length > 0));
+    if (missing.length > 0) {
+      return { row, missing };
+    }
+  }
+  return null;
+}
+
+
+
+    // ----------Stimulus--------------
+    // equations: array of {x, y, z}
+    // colorVector: array of 0/1
+    // randomize: boolean — shuffle equation order
+    // sort_terms: boolean — reorder x,y alphabetically by displayed letters
+    // hover_reveal: boolean — if true: initially all black, hover reveals green/red
+function generateEquationHTML(equations, colorVector, randomize, sort_terms, hover_reveal, equations_shuffle_idx, randomize_equation_order_display_once) {
+  // decorate with stable index
+  var eqs = equations.map(function(eq, i) {
+    return { x: eq.x, y: eq.y, z: eq.z, _eqIndex: i };
+  });
+
+  if (randomize) {// randomize for each trial
+    eqs = jsPsych.randomization.shuffle(eqs);
+  }
+  if(randomize_equation_order_display_once){//randomiize once for all trials; hence use cached version.
+    eqs = equations_shuffle_idx.map(idx => eqs[idx]);
+  }
+
+  var htmlRows = eqs.map(function(eq, displayRowIdx) {
+    var x_num = eq.x;
+    var y_num = eq.y;
+
+    if (sort_terms) {
+      var xLetter = int_to_letter[x_num];
+      var yLetter = int_to_letter[y_num];
+      if (yLetter < xLetter) {
+        var tmp = x_num; x_num = y_num; y_num = tmp;
+      }
+    }
+
+    var z_num = eq.z;
+
+    function baseClass(n) {
+      if (hover_reveal) return 'num-black';
+      return colorVector[n] ? 'num-green' : 'num-red';
+    }
+
+    function tokenSpan(n, role) {
+      var letter = int_to_letter[n];
+      var cls = baseClass(n);
+
+      return (
+        '<span class="eq-token ' + cls + '" ' +
+          'data-letter="' + letter + '" ' +
+          'data-int="' + n + '" ' +
+          'data-role="' + role + '" ' +
+          'data-display-row="' + displayRowIdx + '" ' +
+          'data-eq-index="' + eq._eqIndex + '">' +
+          letter +
+        '</span>'
+      );
+    }
+
+    return (
+      '<div class="equation-row" ' +
+           'data-display-row="' + displayRowIdx + '" ' +
+           'data-eq-index="' + eq._eqIndex + '">' +
+        tokenSpan(x_num, 'x') +
+        '&nbsp;+&nbsp;' +
+        tokenSpan(y_num, 'y') +
+        '&nbsp;&rarr;&nbsp;' +
+        tokenSpan(z_num, 'z') +
+      '</div>'
+    );
+  });
+
+    // Add a stable container id so the hover setup can attach once
+    var stim_html = '<div class="equation-list" id="equation-list">' + htmlRows.join('') + '</div>';
+
+    // Save the actual equation display (in letters) participants see
+    var eqs_displayed = [];
+    for (let i=0; i<eqs.length; i++){
+        eqs_displayed.push(int_to_letter[eqs[i].x] + " + " + int_to_letter[eqs[i].y] + " -> " + int_to_letter[eqs[i].z])
+    }
+    return({stim_html, eqs, eqs_displayed});
+
+}
+
+function generateTwoPanelStimulus(
+  equations,
+  colorVector,
+  randomizeEq,
+  sort_terms,
+  leftMode,
+  randomizeLetters,
+  distractorLetters,
+  totalLeftCount,
+  enableHoverToggle,   
+  equations_shuffle_idx, randomize_equation_order_display_once,
+    // NEW:
+  hide_products = false,
+  always_show_product_eq_indices = []   // indices in ORIGINAL `equations` array
+) {
+  // ----------------------------
+  // 1) LEFT PANEL: collect "present" LATIN letters
+  // ----------------------------
+  var presentNums = [];
+  for (var i = 0; i < colorVector.length; i++) {
+    if (colorVector[i] === 1 && int_to_letter[i] !== undefined) {
+      presentNums.push(i);
+    }
+  }
+
+  var presentLetters = presentNums.map(function(n) {
+    return int_to_letter[n];
+  });
+
+  // ----------------------------
+  // 2) Sample distractors to reach totalLeftCount, if requested
+  // ----------------------------
+  var distractorsUsed = [];
+
+  if (
+    Array.isArray(distractorLetters) &&
+    distractorLetters.length > 0 &&
+    typeof totalLeftCount === 'number'
+  ) {
+    var needed = totalLeftCount - presentLetters.length;
+    if (needed > 0) {
+      distractorsUsed = jsPsych.randomization.sampleWithReplacement(
+        distractorLetters,
+        needed
+      );
+    }
+  }
+
+  // ----------------------------
+  // 3) Combine & order letters for LEFT panel
+  // ----------------------------
+  var allLetters;
+
+  if (randomizeLetters) {
+    // Randomize everything together: real letters + distractors
+    allLetters = presentLetters.concat(distractorsUsed);
+    allLetters = jsPsych.randomization.shuffle(allLetters);
+  } else {
+    // Keep real letters in alphabetical order,
+    // insert distractors at random positions, without disturbing that order
+    var base = presentLetters.slice().sort(); // sorted real letters
+    allLetters = base.slice();
+
+    distractorsUsed.forEach(function(d) {
+      var pos = Math.floor(Math.random() * (allLetters.length + 1)); // 0..len
+      allLetters.splice(pos, 0, d);
+    });
+  }
+
+  // ----------------------------
+  // 4) Build LEFT panel HTML (line or circle)
+  // ----------------------------
+  var leftHTML = '';
+
+  if (leftMode === 'circle') {
+    var letterCount = allLetters.length;
+    var cx = 125;    // center x (px)
+    var cy = 125;    // center y (px)
+    var radius = 150; // ring radius
+
+    var letterSpans = allLetters.map(function(letter, idx) {
+      if (letterCount === 0) return '';
+
+      var angle = 2 * Math.PI * idx / letterCount - Math.PI / 2;
+      var x = cx + radius * Math.cos(angle);
+      var y = cy + radius * Math.sin(angle);
+
+      return (
+        '<div class="panel-left-circle-letter" ' +
+          'style="left:' + x + 'px; top:' + y + 'px;">' +
+          letter +
+        '</div>'
+      );
+    });
+
+    leftHTML =
+      '<div class="panel-left-circle-wrapper">' +
+        letterSpans.join('') +
+      '</div>';
+
+  } else {
+    // line mode: space-separated string, wrapping via CSS
+    var lineString = allLetters.join(' ');
+    leftHTML =
+      '<div class="panel-left-content-line">' +
+        lineString +
+      '</div>';
+  }
+
+  // ----------------------------
+// 5) RIGHT PANEL: equations (all black) + OPTIONAL product masking
+// ----------------------------
+  var eqs = equations.map(function(eq, i){
+    return { x:eq.x, y:eq.y, z:eq.z, _eqIndex:i };
+  });
+
+  if (randomizeEq) {
+    eqs = jsPsych.randomization.shuffle(eqs);
+  }
+  if (randomize_equation_order_display_once) {
+    eqs = equations_shuffle_idx.map(idx => eqs[idx]);
+  }
+
+  var alwaysSet = Array.isArray(always_show_product_eq_indices)
+    ? new Set(always_show_product_eq_indices)
+    : new Set();
+
+  var eqRows = eqs.map(function(eq) {
+    var x_num = eq.x;
+    var y_num = eq.y;
+
+    if (sort_terms) {
+      var xL = int_to_letter[x_num];
+      var yL = int_to_letter[y_num];
+      if (yL < xL) {
+        var tmp = x_num;
+        x_num = y_num;
+        y_num = tmp;
+      }
+    }
+
+    var z_num = eq.z;
+
+    var xLetter = int_to_letter[x_num];
+    var yLetter = int_to_letter[y_num];
+    var zLetter = int_to_letter[z_num];
+
+    // NEW: mask RHS product unless allowlisted
+    var maskThis = hide_products && !alwaysSet.has(eq._eqIndex);
+    var zShownText = maskThis ? '?' : zLetter;
+
+    var eqString = `${xLetter} + ${yLetter} -> ${zLetter}`;  // true product letter
+    return (
+      '<div class="equation-row" data-eq-index="' + eq._eqIndex + '" data-eq-string="' + eqString + '">' +
+        '<span class="num-black">' + xLetter + '</span>' +
+        '&nbsp;+&nbsp;' +
+        '<span class="num-black">' + yLetter + '</span>' +
+        '&nbsp;&rarr;&nbsp;' +
+        '<span class="num-black rhs-product ' + (maskThis ? 'rhs-masked' : '') + '" ' +
+        'data-role="z" ' +
+        'data-eq-index="' + eq._eqIndex + '" ' +
+        'data-int="' + z_num + '" ' +
+        'data-letter="' + zLetter + '" ' +
+        'data-hidden="' + (maskThis ? '1' : '0') + '">' +
+          zShownText +
+        '</span>'
+        +
+        '</div>'
+    );
+
+  });
+
+  var rightHTML =
+    '<div class="equation-list" id="equation-list-right">' +
+      eqRows.join('') +
+    '</div>';
+
+  // ----------------------------
+  // 6) Combine into two-panel layout
+  // ----------------------------
+  // Note: we don't actually use enableHoverToggle inside the HTML;
+  // it will be used by the trial's on_load to attach listeners.
+  var stim_html =
+    '<div class="two-panel-stimulus" id="two-panel-stimulus">' +
+      '<div class="panel-left" id="panel-left">' +
+        leftHTML +
+      '</div>' +
+      '<div class="panel-right" id="panel-right">' +
+        rightHTML +
+      '</div>' +
+    '</div>';
+
+    // Left panel: Save the objects displayed (letters + distractors; if ring display, start from top and go clockwise)
+    // Right panel: Save the actual equation display (in letters) participants see
+    var eqs_displayed = [];
+    for (let i=0; i<eqs.length; i++){
+      eqs_displayed.push(
+        int_to_letter[eqs[i].x] + " + " + int_to_letter[eqs[i].y] + " -> " + int_to_letter[eqs[i].z]
+      );
+    }
+
+  return({stim_html, eqs, eqs_displayed, allLetters});
+}
+
+
+function setupRightPanelProductRevealWithLogging(rightListId, hoverLog) {
+  const root = document.getElementById(rightListId);
+  if (!root) {
+    console.warn('setupRightPanelProductRevealWithLogging: missing', rightListId);
+    return;
+  }
+  if (root.__rhsRevealBound) return;
+
+  // Track currently-hovered RHS tokens
+  const active = new Map(); // el -> startTime
+
+  function reveal(el) {
+    if (!el || el.dataset.hidden !== '1') return;
+    el.textContent = el.dataset.letter || '';
+    el.dataset.revealed = '1';
+  }
+
+  function mask(el) {
+    if (!el || el.dataset.hidden !== '1') return;
+    el.textContent = '?';
+    el.dataset.revealed = '0';
+  }
+
+  function logClose(el, endTime, reason) {
+    const t0 = active.get(el);
+    if (typeof t0 !== 'number') return;
+
+    const row = el.closest('.equation-row');
+    const eqString = row ? (row.dataset.eqString || '') : '';
+
+    hoverLog.product_hovers.push({
+      t_start_ms: t0 - hoverLog.t0,
+      t_end_ms:   endTime - hoverLog.t0,
+      dur_ms:     endTime - t0,
+      eq_index:       Number(el.dataset.eqIndex),
+      product_int:    Number(el.dataset.int),
+      product_letter: String(el.dataset.letter || ''),
+      equation_letters: eqString,
+      close_reason: reason || 'leave'
+    });
+
+    active.delete(el);
+  }
+
+  // Use pointerenter/leave in CAPTURE phase for robustness
+  root.addEventListener('pointerenter', (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains('rhs-product')) return;
+    if (t.dataset.hidden !== '1') return;
+
+    reveal(t);
+    if (!active.has(t)) active.set(t, performance.now());
+  }, true);
+
+  root.addEventListener('pointerleave', (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains('rhs-product')) return;
+    if (t.dataset.hidden !== '1') return;
+
+    const now = performance.now();
+    logClose(t, now, 'leave');
+    mask(t);
+  }, true);
+
+  // If the pointer gets canceled (trackpad gestures, window switches, etc.)
+  root.addEventListener('pointercancel', (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains('rhs-product')) return;
+    if (t.dataset.hidden !== '1') return;
+
+    const now = performance.now();
+    logClose(t, now, 'cancel');
+    mask(t);
+  }, true);
+
+  // Public “panic button”: close + mask EVERYTHING that’s currently active/revealed
+  root.__forceCloseAllProductHovers = function(reason) {
+    const now = performance.now();
+
+    // Close active timers
+    for (const [el, start] of active.entries()) {
+      logClose(el, now, reason || 'force_close');
+      mask(el);
+    }
+    active.clear();
+
+    // Also mask any revealed tokens that somehow escaped tracking
+    const tokens = root.querySelectorAll('.rhs-product[data-hidden="1"]');
+    tokens.forEach(mask);
+  };
+
+  root.__rhsRevealBound = true;
+}
+
+
+function setupPanelHoverToggleWithLogging(hoverLog) {
+  const container = document.getElementById('two-panel-stimulus');
+  const left      = document.getElementById('panel-left');
+  const right     = document.getElementById('panel-right');
+
+  if (!container || !left || !right) {
+    console.warn('Hover toggle: missing container or panels');
+    return;
+  }
+
+  // helper: force-close product hover if we are hiding the right panel
+  function forceCloseRightPanelProducts(reason) {
+    const rhsRoot = document.getElementById('equation-list-right');
+    if (rhsRoot && typeof rhsRoot.__forceCloseAllProductHovers === 'function') {
+      rhsRoot.__forceCloseAllProductHovers(reason || 'panel_switch');
+    }
+  }
+
+  // Initial: show left only
+  left.classList.add('panel-visible');
+  left.classList.remove('panel-hidden');
+  right.classList.add('panel-hidden');
+  right.classList.remove('panel-visible');
+
+  // logging state
+  let currentPanel = 'left';
+  let currentStart = performance.now();
+
+  function closeInterval(endTime) {
+    hoverLog.panel_hovers.push({
+      panel: currentPanel,
+      t_start_ms: currentStart - hoverLog.t0,
+      t_end_ms:   endTime - hoverLog.t0,
+      dur_ms:     endTime - currentStart
+    });
+  }
+
+  function switchTo(panel, now) {
+    if (panel === currentPanel) return;
+
+    // close previous interval
+    closeInterval(now);
+
+    // if we are leaving RIGHT panel, force-close RHS product hover
+    if (currentPanel === 'right') {
+      forceCloseRightPanelProducts('leave_right_panel');
+    }
+
+    currentPanel = panel;
+    currentStart = now;
+  }
+
+  function handleMouseMove(e) {
+    const rect = container.getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const mid  = rect.width / 2;
+    const now  = performance.now();
+
+    if (relX < mid) {
+      if (!left.classList.contains('panel-visible')) {
+        // Switching to left
+        right.classList.add('panel-hidden');
+        right.classList.remove('panel-visible');
+
+        left.classList.add('panel-visible');
+        left.classList.remove('panel-hidden');
+
+        switchTo('left', now);
+      }
+    } else {
+      if (!right.classList.contains('panel-visible')) {
+        // Switching to right
+        left.classList.add('panel-hidden');
+        left.classList.remove('panel-visible');
+
+        right.classList.add('panel-visible');
+        right.classList.remove('panel-hidden');
+
+        switchTo('right', now);
+      }
+    }
+  }
+
+  function handleMouseLeave() {
+    const now = performance.now();
+    closeInterval(now);
+
+    // leaving the container: if we were on right, force close products
+    if (currentPanel === 'right') {
+      forceCloseRightPanelProducts('leave_container');
+    }
+
+    // restart
+    currentStart = performance.now();
+  }
+
+  container.addEventListener('mousemove', handleMouseMove);
+  container.addEventListener('mouseleave', handleMouseLeave);
+
+  hoverLog._finalizePanels = function() {
+    const now = performance.now();
+    closeInterval(now);
+
+    // also force-close products at trial end
+    forceCloseRightPanelProducts('trial_finalize');
+  };
+}
+
+
+
+
+
+
+
+
+
+    // Whether to shuffle mapping between numbers (used to specify equations) and letters (displayed)
+    var randomize_numberletter_mapping = true;
+    // Whether to shuffle equation rows in the display for every trial.
+    var randomize_equation_order_display = true;
+    // Just shuffle once---same across trials within each subject?
+    var randomize_equation_order_display_once = false; // Will override randomize_equation_order_display above.
+
+    // Whether to sort reactant order for each equation: B + A -> C is converted to A + B -> C
+    var sort_equation_reactants = true;
+    // For hard condition, randomize display order of visual search array in the left panel.
+    var randomize_visual_search_array = true;
+    // Visual search array display: 'circle' or 'line'
+    var visual_search_array_display = 'circle';
+    // Whether equation order submitted matters: need to produce an initially absent object, before it can be used as reactant (for later equation rows).
+    var equation_order_matters = true;
+    // Greek distractors (pick ones that don't resemble Latin letters)
+    var greekDistractors = ['Γ','Δ','Λ','Ξ','Π','Σ','Φ','Ψ','Ω']; // Set this to empty if we don't want to display distractors
+    var greekDistractors = "NOPQRSTUVWXYZ".split("")
+    
+    var num_objects_displayed = 15; // For hard trials, number of objects displayed (present letters + distractors)
+    // Put this somewhere global (outside trial), so it persists:
+    let CURRENT_HOVER_LOGGER = null;
+    var num_successful_trials = 0;
+    var cumulative_bonus = 0;
+
+    // GLOBAL PARAMETERS
+    // ------------------------
+    var N = 13;  // max integer used across all equations (0..N)
+    // RANDOM INT → LETTER MAPPING
+    // All capital letters
+    // var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+    var alphabet = "ABCDEFGHIJKLM".split("");
+    // Randomly pick N+1 letters and shuffle them
+    if(randomize_numberletter_mapping){
+        var shuffledLetters = jsPsych.randomization.shuffle(alphabet).slice(0, N + 1);
+    } else {
+        var shuffledLetters = alphabet.slice(0, N + 1);
+    }
+    // Build mapping: 0..N → a unique capital letter
+    var int_to_letter = {};
+    for (var i = 0; i <= N; i++) {
+        int_to_letter[i] = shuffledLetters[i];
+    }
+    // (Optional but often useful) the reverse mapping
+    var letter_to_int = {};
+    for (var i = 0; i <= N; i++) {
+        letter_to_int[int_to_letter[i]] = i;
+    }
+
+    // ------------Define trials---------------
+    const goal_object = 12; // Final product to be made for every trial.
+    const goal_object_letter = int_to_letter[goal_object];
+
+    // Example equation set for one trial
+    const equations_example = [
+    { x: 0, y: 1, z: 3 },  // 0 + 1 -> 1
+    { x: 1, y: 2, z: 7 },  // 2 + 3 -> 5
+    { x: 3, y: 4, z: 9 },  // 4 + 1 -> 5
+    { x: 4, y: 5, z: 10 },  // 4 + 1 -> 5
+    { x: 5, y: 6, z: 12 },  // 4 + 1 -> 5
+    { x: 6, y: 7, z: 12 },  // 4 + 1 -> 5
+    { x: 8, y: 9, z: 12 },  // 4 + 1 -> 5
+    { x: 10, y: 11, z: 12 },  // 4 + 1 -> 5
+    ];
+    // Only used when randomize_equation_order_display_once = true
+    const range = N => Array.from({ length: N }, (_, i) => i);
+    const equations_shuffle_idx = jsPsych.randomization.shuffle(range(equations_example.length));
+    const equations_example_shuffledonce = equations_shuffle_idx.map(idx => equations_example[idx]);
+
+    // All subjects see the same training trials in this order. 
+    var states_train = [[0,0,0,0,0,0,0,0,1,1,0,0,0],
+                        [0,0,0,1,0,0,0,0,1,1,0,0,0],
+                        [0,0,0,1,1,0,0,0,1,0,0,0,0],
+                        [1,1,0,0,1,0,0,0,1,0,0,0,0],
+                        [1,1,0,1,1,0,0,0,1,1,0,0,0],];
+    var states_train2 = [[0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0],
+                         [0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0],
+
+                         [1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+                         [0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+                         [1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+
+                         [1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+                         [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0],
+                         [1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+                         [0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+                         [1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0],
+                         [0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0],
+                         [1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0],];
+
+    var states_test_pc = [[0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 0, 0],
+       [0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0],
+       [0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0],
+       [1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0],
+       [0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0],
+       [0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0],]; // Einstellung sol is actually (one of) the optimal sols.
+    var states_test_einstellung2 = [[1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0],
+       [1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 0],
+       [1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 0],
+       [0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0],
+       [1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0],]; // Einstellung sol 2 steps, optimal sol 1 step
+    var states_test_einstellung3 = [ [1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0],
+       [1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0],
+       [1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0],
+       [1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0],
+       [1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0]]; // Einstellung sol 3 steps, optimal sol 1 or 2 steps
+    // Keep the three trial groups in order, similar to original Einstellung studies; shuffle within each group.
+    var states_train_paired = states_train.map((item, index) => ({
+        state_group: -1,
+        state_idx: index,
+        state: item,
+    }));
+    var states_train2_paired = states_train2.map((item, index) => ({
+        state_group: 0,
+        state_idx: index,
+        state: item,
+    }));
+    var states_test_pc_paired = states_test_pc.map((item, index) => ({
+        state_group: 1,
+        state_idx: index,
+        state: item,
+    }));
+    var states_test_einstellung2_paired = states_test_einstellung2.map((item, index) => ({
+        state_group: 2,
+        state_idx: index + states_test_pc.length,
+        state: item,
+    }));
+    var states_test_einstellung3_paired = states_test_einstellung3.map((item, index) => ({
+        state_group: 3,
+        state_idx: index + states_test_pc.length + states_test_einstellung2.length,
+        state: item,
+    }));
+    var states_test_paired = jsPsych.randomization.shuffle(states_test_pc_paired).concat(jsPsych.randomization.shuffle(states_test_einstellung2_paired)).concat(jsPsych.randomization.shuffle(states_test_einstellung3_paired));
+    // console.log(states_test_paired)
+
+
+    /*******************
+     * ROW TEMPLATE
+     *******************/
+    function rowHTML(rowId) {
+      // maxlength=1 + pattern -> native HTML guard; JS below adds stricter guards
+      return `
+        <div class="eq-row" data-row-id="${rowId}">
+          <span></span>
+          <input class="sym" name="row_${rowId}_A" type="text"
+                 maxlength="1" pattern="${patternRegexStr}" required
+                 inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                 aria-label="Left term">
+          <span> + </span>
+          <input class="sym" name="row_${rowId}_B" type="text"
+                 maxlength="1" pattern="${patternRegexStr}" required
+                 inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                 aria-label="Right term">
+          <span> → </span>
+          <input class="sym" name="row_${rowId}_C" type="text"
+                 maxlength="1" pattern="${patternRegexStr}" required
+                 inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                 aria-label="Sum">
+          <span></span>
+
+          <button class="eq-up"   type="button" title="Move up">↑</button>
+          <button class="eq-down" type="button" title="Move down">↓</button>
+          <button class="eq-del"  type="button" title="Delete">✕</button>
+        </div>`;
+    }
+
+    /*******************
+     * INPUT WIRING
+     *******************/
+    function wireSymbolInputs(rootEl) {
+      // rootEl can be a row div or the rows container
+      const scope = rootEl || document;
+
+      const inputs = Array.from(scope.querySelectorAll('input.sym'));
+      inputs.forEach((inp) => {
+        // Make mobile keyboards nicer (optional)
+        inp.setAttribute('autocomplete', 'off');
+        inp.setAttribute('autocapitalize', 'characters');
+        inp.setAttribute('inputmode', 'text');
+
+        // IMPORTANT: we will manage 1-char ourselves
+        inp.setAttribute('maxlength', '2'); // allow paste; we'll sanitize down to 1
+
+        // Helper: focus next .sym input in DOM order
+        function focusNext(current) {
+          const all = Array.from(document.querySelectorAll('input.sym'));
+          const idx = all.indexOf(current);
+          if (idx >= 0 && idx < all.length - 1) {
+            all[idx + 1].focus();
+            all[idx + 1].select();
+          }
+        }
+
+        // Helper: focus previous
+        function focusPrev(current) {
+          const all = Array.from(document.querySelectorAll('input.sym'));
+          const idx = all.indexOf(current);
+          if (idx > 0) {
+            all[idx - 1].focus();
+            all[idx - 1].select();
+          }
+        }
+
+        // When user clicks a filled blank, highlight it so typing overwrites
+        inp.addEventListener('focus', () => {
+          // select existing char so next keystroke overwrites
+          setTimeout(() => inp.select(), 0);
+        });
+
+        // Force overwrite behavior:
+        // - keep only last typed allowed char
+        // - then jump to next blank
+        inp.addEventListener('input', (e) => {
+          inp.classList.remove('missing-blank');
+          const raw = (inp.value || '').toUpperCase();
+
+          // Extract allowed characters from what they typed/pasted
+          const candidates = raw.split('').filter(ch => validateOneChar(ch));
+          const last = candidates.length ? candidates[candidates.length - 1] : '';
+
+          inp.value = last; // overwrite with exactly 1 char (or blank)
+
+          if (last !== '') {
+            focusNext(inp);
+          }
+        });
+
+        // Allow easy overwrite even if cursor isn't selecting (some browsers)
+        // If a letter key is pressed, we overwrite immediately and advance.
+        inp.addEventListener('keydown', (e) => {
+          // Navigation
+          if (e.key === 'ArrowLeft') { e.preventDefault(); focusPrev(inp); return; }
+          if (e.key === 'ArrowRight') { e.preventDefault(); focusNext(inp); return; }
+
+          // Backspace: clear, and if already empty move back
+          if (e.key === 'Backspace') {
+            if (inp.value) {
+              // clear current
+              inp.value = '';
+            } else {
+              // move back
+              focusPrev(inp);
+            }
+            e.preventDefault();
+            return;
+          }
+
+          // Delete: clear current
+          if (e.key === 'Delete') {
+            inp.value = '';
+            e.preventDefault();
+            return;
+          }
+
+          // If they type a single character, overwrite and advance
+          if (e.key && e.key.length === 1) {
+            const ch = e.key.toUpperCase();
+            if (validateOneChar(ch)) {
+              inp.value = ch;
+              e.preventDefault();
+              focusNext(inp);
+            } else {
+              // block invalid characters
+              e.preventDefault();
+            }
+            return;
+          }
+
+          // Let other keys through (Tab, Enter, etc.)
+        });
+
+        // If they paste multiple letters, keep last allowed and advance
+        inp.addEventListener('paste', (e) => {
+          e.preventDefault();
+          const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+          const chars = text.toUpperCase().split('').filter(ch => validateOneChar(ch));
+          const last = chars.length ? chars[chars.length - 1] : '';
+          inp.value = last;
+          if (last) focusNext(inp);
+        });
+      });
+    }
+
+
+    function readCurrentFormAsObject() {
+      const form = document.querySelector('#jspsych-survey-html-form form') || document.querySelector('form');
+      const obj = {};
+      if (!form) return obj;
+      const fd = new FormData(form);
+      fd.forEach((value, key) => { obj[key] = value; });
+      return obj;
+    }
+
+    function finalizeProcessLogsForThisTrial(dataObj) {
+      // finalize hover logs (color condition)
+      if (condition == 1 && display_format == "color") {
+        if (hoverLogger) {
+          hoverLogger.finalize();
+          dataObj.equation_hover_log = hoverLogger.logs;
+        } else {
+          dataObj.equation_hover_log = [];
+        }
+      }
+
+      // finalize visualsearch hover logs if you use vsHoverLog
+      if (display_format == "visualsearch" && condition == 1) {
+        if (typeof vsHoverLog !== 'undefined' && vsHoverLog && typeof vsHoverLog._finalizePanels === 'function') {
+          vsHoverLog._finalizePanels();
+        }
+        if (typeof vsHoverLog !== 'undefined' && vsHoverLog) {
+          dataObj.visualsearch_hover_log = vsHoverLog;
+        }
+      }
+    }
+
+    function endTrialWithMessage({ timedOut, messageHTML, responsesObj, duration=iti_duration }) {
+      if (trialEnded) return;
+      trialEnded = true;
+
+      // stop timers
+      if (countdownTimer) clearInterval(countdownTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      removeOverlay(countdownId);
+
+      // build payload to send into on_finish
+      const payload = {
+        responses: JSON.stringify(responsesObj || {})
+      };
+
+      // attach time-limit related fields early (also re-attached in on_finish if you prefer)
+      payload.time_limit_s = timeLimitSec;
+      payload.time_exceeded = Number(!!timedOut);
+
+      // show message screen for duration ms.
+      showCenterMessageOverlay(msgId, messageHTML);
+
+      setTimeout(() => {
+        hideOverlay(msgId);
+        removeOverlay(msgId);
+        jsPsych.finishTrial(payload);
+      }, duration);
+    }
+
+    function replaceZLettersWithQuestion(html) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+
+      const zTokens = doc.querySelectorAll('[data-role="z"]');
+
+      zTokens.forEach(el => {
+        el.textContent = "?";
+        el.setAttribute("data-letter", "?");
+      });
+
+      return doc.body.innerHTML;
+    }
+
+
+
+
+
+
+
+/*******************
+ * INSTRUCTIONS
+ *******************/
+const num_test_trials = states_test_paired.length;
+const max_bonus_per_trial = 0.175;
+const cost_per_reaction_dollars = 0.025;
+const base_pay_dollars = 6;
+const bonus_max_dollars = max_bonus_per_trial * num_test_trials;
+const einstellung_reactant1 = int_to_letter[8]<int_to_letter[9]? int_to_letter[8]:int_to_letter[9];
+const einstellung_reactant2 = int_to_letter[8]<int_to_letter[9]? int_to_letter[9]:int_to_letter[8];
+const einstellung2_reactant1 = int_to_letter[3]<int_to_letter[4]? int_to_letter[3]:int_to_letter[4];
+const einstellung2_reactant2 = int_to_letter[3]<int_to_letter[4]? int_to_letter[4]:int_to_letter[3];
+const einstellung3_reactant1 = int_to_letter[0]<int_to_letter[1]? int_to_letter[0]:int_to_letter[1];
+const einstellung3_reactant2 = int_to_letter[0]<int_to_letter[1]? int_to_letter[1]:int_to_letter[0];
+const einstellung_eq = `${einstellung_reactant1} + ${einstellung_reactant2} → ${int_to_letter[12]}`;
+const einstellung2_eq = `${einstellung2_reactant1} + ${einstellung2_reactant2} → ${int_to_letter[9]}`;
+const einstellung3_eq = `${einstellung3_reactant1} + ${einstellung3_reactant2} → ${int_to_letter[3]}`;
+//console.log(equations_example)
+
+const stim_array_instructions = generateEquationHTML(
+    equations_example,
+    states_train_paired[0],
+    false,
+    sort_equation_reactants,
+    condition = 1,
+    equations_shuffle_idx,
+    randomize_equation_order_display_once,
+);
+
+// If your generateEquationHTML returns a bundle object:
+// stim_array.stim_html should contain id="equation-list" (generic)
+let stim_html_instructions = stim_array_instructions.stim_html;
+var stim_html_instructions_safe =
+  stim_html_instructions.replace('id="equation-list"', 'id="equation-list-instructions"');
+var stim_html_instructions_safe = replaceZLettersWithQuestion(stim_html_instructions_safe);
+
+// Change training instructions by task condition (color or visualsearch)
+var test_default_solution_prompt = `
+<p>Practiced equation family (1 to 3 steps depending on ingredient availability):<br>
+<span style="font-size:22px; font-weight:bold;">${einstellung3_eq}  &nbsp;&nbsp;&nbsp;  ${einstellung2_eq}  &nbsp;&nbsp;&nbsp; ${einstellung_eq}</span></p>
+`;
+
+if(display_format=="color"){
+    var training_instructions = [
+        `You can check which ingredients are <span style="color:#4CBB17">initially available</span>, and which equations are permitted. <br>
+        The only solution here is the practiced equation family's last step: ${einstellung_eq}. Type it in and click "Submit".`,
+        `Good! The same solution applies here: ${einstellung_eq}. <br>You can see how the initially available ingredients differ across trials.`,
+        `We'd like to use ${einstellung_eq}, but ${int_to_letter[9]} is initially unavailable. Produce it first using another equation: ${einstellung2_eq}.`,
+        `Similarly in this example, you need to perform all three steps: ${einstellung3_eq}, ${einstellung2_eq}, ${einstellung_eq}.`,
+        `You're rewarded for submitting fewer equations. Can you produce ${goal_object_letter} with one equation, instead of two?`,
+    ];
+    var introPages = [
+   `<p style='font-size: 30px'> Become an alchemist! </p>
+    <p> Imagine you are a magical alchemist, commissioned to produce potions from available ingredients.
+    <br> You goal is to produce <b>Potion ${goal_object_letter}</b>, which is an essential, life-saving medicine!</p>`
+    +'<img src="img/alchemist.png" height="400"></img>',
+
+    `<p>To produce Potion ${goal_object_letter}, you must rely on <b>ingredients</b> denoted by other English letters.<br>
+        Certain pairs of ingredients (X,Y) can react to <b>produce</b> a third ingredient (Z). <br> 
+        This can be expressed as an <b>equation</b>: <i>X + Y → Z</i>. <br></p>
+        <p> You'll always have an <b>"alchemy cheat-sheet"</b>, listing all possible reactions. <br>
+        The one below serves as an example, with all produced ingredients covered by "?".</p>
+        <b>You must use equation(s) on the cheat-sheet to ultimately produce Potion ${goal_object_letter}</b>.</p>
+        <div class="stim-box"><div class="center-cheatsheet">${stim_html_instructions_safe}</div></div>`,
+
+    `<p> However, not all ingredients are <b style="color:#4CBB17">initially available</b>. <br>
+         The initial availability of each ingredient is denoted by <b>the letter's color on the alchemy cheat-sheet</b>:<br>
+        <b style="color:#4CBB17">Green</b> if initially available, <b style="color:red">red</b> otherwise.</p>
+    <p> To successfully produce Potion ${goal_object_letter}, you must use the ingredients available to you.<br>
+        Luckily, you can produce <b style="color:red">initially nonavailable</b> ingredients via other equations (that only make use of available ingredients), so that they become available for later use.</p>`,
+
+     `<p> The main game consists of <b>${num_test_trials} trials</b>, which differ in the ingredients initially available. <br>
+    In each trial, you will type and submit a list of equations.<br>
+    <div class="rules-block">
+    <div><b>Your submitted list must follow the rules below:</b> </div>
+        <div>1) Each submitted equation must be possible — they must be somewhere <b>on the cheat-sheet</b>.</div>
+        <div>2) The list of submitted equations must <b>ultimately produce Potion ${goal_object_letter}</b>.</div>
+        <div>3) To use an ingredient (on the left side of "→" in some submitted equation), it must either be <b>initially available</b>, or <b>produced by an earlier equation in your submitted list</b> (typed in some row above). Hence, the submitted list order matters!</div>
+        <div>4) You must submit your list <b>within ${test_trial_time_limit} seconds</b> (a countdown will be displayed to you).</div>
+    </div>
+    <p>You can add, remove, or rearrange your list of equations, by clicking on buttons on the right side.<br>
+        Click "Submit" to submit your list of equations.</p>
+        <img src="img/type_equations.png" height="250" style="border: 2px solid black"></img>`,
+        
+   `<p> Now, let\'s move onto payment! </p>
+    <p>On each trial, your <b style="color:green">\$bonus\$</b> depends on the number of equations submitted.<br>
+        Because reactions are costly, <b style="color:green">the fewer equations you submit, the greater your bonus is.</b></p>
+    <p> On each trial, the first equation is always free. Each additional equation costs ${cost_per_reaction_dollars*100} cent.<br> 
+        Specifically, your <b style="color:green">Bonus = \$${max_bonus_per_trial} – \$${cost_per_reaction_dollars} × (#submitted equations - 1)</b>, but will never be negative.<br>
+        This allows you to submit ${Math.ceil(1 + max_bonus_per_trial / cost_per_reaction_dollars)} equations per trial, which is ample for the task!</p>
+    <p>However, <b>rule violations</b> lower your bonus to <b>\$0</b>, no matter how few equations you submit: <br>
+        If <b style="color:red">you submit equations not on the cheat-sheet</b>, you will earn <b style="color:red">\$0</b> for that trial.<br>
+        If <b style="color:red">the list of submitted equations doesn't produce Potion ${goal_object_letter}</b>, you will earn <b style="color:red">\$0</b>.<br>
+        If <b style="color:red">any submitted equation uses an ingredient not initially available or produced by an earlier equation</b>, you will earn <b style="color:red">\$0</b>.<br>
+        If you <b style="color:red">didn't submit anything in ${test_trial_time_limit} seconds</b>, you will earn <b style="color:red">\$0</b>.</p>
+    <p>There is no feedback after each trial. Upon submission/time-outs, you'll automatically proceed to the next trial.</p>`,
+    
+    `<p>A final reminder:</p>
+    <p> There is <b>a practiced family of equations</b>:<br>
+    <div><span style="font-size: 24px;"><b>${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}</b></span></div><br>
+    These equations can always be used to produce <b>Potion ${goal_object_letter}</b>, and will always be displayed during the game.</p>
+    <p>On each trial, <b>at least one part of this equation family is feasible</b> given the ingredients initially available.<br>
+    Depending on the trial, this may involve using all three equations, the last two, or just the final equation.</p>
+    <p>Whether to rely on this equation family is entirely up to you.</p>`,
+
+
+    `<p> If you understand the rules, please click 'Next' to go to the <b>comprehension check</b>. 
+    <br>Otherwise, click 'Previous' to view the instructions again. </p>
+    <p>If you don't get the comprehension questions correct, you won't be able to move on. </p>`
+
+    ];
+
+    var comprehension_questions = {
+        type: 'survey-multi-choice',
+        preamble: `Comprehension questions:`,
+        questions: [
+            {
+                prompt: '<b> 1. What is the goal of the game? </b>',
+                options: ['To type a list of equations that produce Potion '+goal_object_letter+'.',
+                          'To copy all equations from the cheat-sheet.',
+                          'To randomly type equations that you like.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 2. What do the colors (green/red) of letters mean? </b>',
+                options: ['The colors are useless for the task.',
+                          'The colors indicate how similar the ingredient is to Potion '+goal_object_letter+'.',
+                          'The color indicates whether the corresponding ingredient is initially available.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 3. If an ingredient is not initially available, can you still use it in your submitted equations? </b>',
+                options: ['No, I can\'t. I will receive a \$0 bonus for that trial.',
+                          'Only if I have produced the ingredient via an earlier equation in my submitted list.',
+                          'All ingredients are initially available, so the question\'s premise does not hold.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 4. What determines your bonus? </b>',
+                options: ['How fast I submit the list of equations.',
+                          'The number of equations submitted; they must be in the cheat-sheet, produce Potion '+goal_object_letter+', and involve ingredients that are either initially available or produced earlier.',
+                          'How consistent my lists of equations are across trials.'], 
+                required: true
+            },
+                        {
+                prompt: '<b> 5. Which of the following is the "practiced equation family"? </b>',
+                options: ['There is no practiced equation family for the game.',
+                          `${goal_object_letter=="E"? "C":"E"} + ${goal_object_letter=="H"? "D":"H"} → ${goal_object_letter=="L"? "M":"L"}, &nbsp;&nbsp; ${goal_object_letter=="B"? "A":"B"} + ${goal_object_letter=="F"? "G":"F"} → ${goal_object_letter=="K"? "D":"K"}, &nbsp;&nbsp;   ${goal_object_letter=="F"? "G":"F"} + ${goal_object_letter=="K"? "D":"K"} → ${goal_object_letter}`,
+                          `${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}`], 
+                required: true
+            }
+        ],
+        on_finish: function(data) {
+            var responses = data.response
+            if (responses.Q0.includes('Potion') == true && responses.Q1.includes('available') == true && responses.Q2.includes('earlier') == true && responses.Q3.includes('number') == true && responses.Q4.includes(einstellung3_eq) == true) {
+                failed_comprehension_questions = false
+            }
+        }
+    };
+
+
+} else if(display_format=="visualsearch"){
+    if(test_cond==0){
+    var training_instructions = [
+    `You can examine the two panels to see which ingredients are initially available, and which equations are permitted. <br>
+    The only solution here is the practiced equation family's last step: ${einstellung_eq}. Type it in and click "Submit".`,
+    `Good! The same solution applies here: ${einstellung_eq}. <br>You can see how the initially available ingredients differ across trials.`,
+    `We'd like to use ${einstellung_eq}, but ${int_to_letter[9]} is initially unavailable. Produce it first using another equation: ${einstellung2_eq}.`,
+    `Similarly in this example, you need to perform all three steps: ${einstellung3_eq}, ${einstellung2_eq}, ${einstellung_eq}.`,
+    `You're rewarded for submitting fewer equations. Can you produce ${goal_object_letter} with one equation, instead of two?`,
+    ];
+
+    var introPages = [
+    `<p style='font-size: 30px'> Become an alchemist! </p>
+        <p> Imagine you are a magical alchemist, commissioned to produce potions from available ingredients.
+        <br> You goal is to produce <b>Potion ${goal_object_letter}</b>, which is an essential, life-saving medicine!</p>`
+        +'<img src="img/alchemist.png" height="400"></img>',
+
+        `<p>To produce Potion ${goal_object_letter}, you must rely on <b>ingredients</b> denoted by other English letters.<br>
+            Certain pairs of ingredients (X,Y) can react to <b>produce</b> a third ingredient (Z). <br> 
+            This can be expressed as an <b>equation</b>: <i>X + Y → Z</i>. <br></p>
+            <p> You'll always have an <b>"alchemy cheat-sheet"</b>, listing all possible reactions. <br>
+            The one below serves as an example, with all produced ingredients covered by "?".</p>
+            <b>You must use equation(s) on the cheat-sheet to ultimately produce Potion ${goal_object_letter}</b>.</p>
+            <div class="stim-box"><div class="center-cheatsheet">${stim_html_instructions_safe}</div></div>`,
+
+        `<p> However, not all ingredients are <b style="color:#4CBB17">initially available</b>. <br>
+            On each trial, you can <b>find the initially available ingredients</b> in the <b>left panel</b>. The cheat-sheet is located in the <b>right panel</b>.<br>
+            Both panels will be displayed to you simultaneously.</p>
+        <img src="img/visual_search_ring_easy.png" height="300"></img>
+        <p> To successfully produce Potion ${goal_object_letter}, you must use the ingredients available to you.<br>
+            Luckily, you can produce <b style="color:red">initially nonavailable</b> ingredients via other equations (that only make use of available ingredients), so that they become available for later use.</p>`,
+
+        `<p> The main game consists of <b>${num_test_trials} trials</b>, which differ in the ingredients initially available. <br>
+        In each trial, you will type and submit a list of equations.<br>
+        <div class="rules-block">
+        <div><b>Your submitted list must follow the rules below:</b> </div>
+            <div>1) Each submitted equation must be possible — they must be somewhere <b>on the cheat-sheet</b>.</div>
+            <div>2) The list of submitted equations must <b>ultimately produce Potion ${goal_object_letter}</b>.</div>
+            <div>3) To use an ingredient (on the left side of "→" in some submitted equation), it must either be <b>initially available</b>, or <b>produced by an earlier equation in your submitted list</b> (typed in some row above). Hence, the submitted list order matters!</div>
+            <div>4) You must submit your list <b>within ${test_trial_time_limit} seconds</b> (a countdown will be displayed to you).</div>
+        </div>
+        <p>You can add, remove, or rearrange your list of equations, by clicking on buttons on the right side.<br>
+            Click "Submit" to submit your list of equations.</p>
+            <img src="img/type_equations.png" height="250" style="border: 2px solid black"></img>`,
+            
+    ` <p> Now, let\'s move onto payment! </p>
+        <p>On each trial, your <b style="color:green">\$bonus\$</b> depends on the number of equations submitted.<br>
+            Because reactions are costly, <b style="color:green">the fewer equations you submit, the greater your bonus is.</b></p>
+        <p> On each trial, the first equation is always free. Each additional equation costs ${cost_per_reaction_dollars*100} cent.<br> 
+            Specifically, your <b style="color:green">Bonus = \$${max_bonus_per_trial} – \$${cost_per_reaction_dollars} × (#submitted equations - 1)</b>, but will never be negative.<br>
+            This allows you to submit ${Math.ceil(1 + max_bonus_per_trial / cost_per_reaction_dollars)} equations per trial, which is ample for the task!</p>
+        <p>However, <b>rule violations</b> lower your bonus to <b>\$0</b>, no matter how few equations you submit: <br>
+            If <b style="color:red">you submit equations not on the cheat-sheet</b>, you will earn <b style="color:red">\$0</b> for that trial.<br>
+            If <b style="color:red">the list of submitted equations doesn't produce Potion ${goal_object_letter}</b>, you will earn <b style="color:red">\$0</b>.<br>
+            If <b style="color:red">any submitted equation uses an ingredient not initially available or produced by an earlier equation</b>, you will earn <b style="color:red">\$0</b>.<br>
+            If you <b style="color:red">didn't submit anything in ${test_trial_time_limit} seconds</b>, you will earn <b style="color:red">\$0</b>.</p>
+        <p>There is no feedback after each trial. Upon submission/time-outs, you'll automatically proceed to the next trial.</p>`,
+        
+        `<p>A final reminder:</p>
+        <p> There is <b>a practiced family of equations</b>:<br>
+        <div><span style="font-size: 24px;"><b>${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}</b></span></div><br>
+        These equations can always be used to produce <b>Potion ${goal_object_letter}</b>, and will always be displayed during the game.</p>
+        <p>On each trial, <b>at least one part of this equation family is feasible</b> given the ingredients initially available.<br>
+        Depending on the trial, this may involve using all three equations, the last two, or just the final equation.</p>
+        <p>Whether to rely on this equation family is entirely up to you.</p>`,
+
+
+        `<p> If you understand the rules, please click 'Next' to go to the <b>comprehension check</b>. 
+        <br>Otherwise, click 'Previous' to view the instructions again. </p>
+        <p>If you don't get the comprehension questions correct, you won't be able to move on. </p>`
+
+        ];
+
+        var comprehension_questions = {
+        type: 'survey-multi-choice',
+        preamble: `Comprehension questions:`,
+        questions: [
+            {
+                prompt: '<b> 1. What is the goal of the game? </b>',
+                options: ['To type a list of equations that produce Potion '+goal_object_letter+'.',
+                          'To copy all equations from the cheat-sheet.',
+                          'To randomly type equations that you like.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 2. What do the two panels do? </b>',
+                options: ['There is only one panel, so the question\'s premise does not hold.',
+                          'Left panel contains the initially available ingredients. Right panel contains the alchemy cheat-sheet. Both are displayed simultaneously.',
+                          'Left panel contains the initially available ingredients. Right panel contains the alchemy cheat-sheet. I can toggle between them using my mouse cursor.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 3. If an ingredient is not initially available, can you still use it in your submitted equations? </b>',
+                options: ['No, I can\'t. I will receive a \$0 bonus for that trial.',
+                          'Only if I have produced the ingredient via an earlier equation in my submitted list.',
+                          'All ingredients are initially available, so the question\'s premise does not hold.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 4. What determines your bonus? </b>',
+                options: ['How fast I submit the list of equations.',
+                          'The number of equations submitted. They must be 1) in the cheat-sheet, 2) produce Potion '+goal_object_letter+', 3) involve ingredients that are either initially available or produced earlier, and 4) be submitted within '+test_trial_time_limit+' seconds.',
+                          'How consistent my lists of equations are across trials.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 5. Which of the following is the "practiced equation family"? </b>',
+                options: ['There is no practiced equation family for the game.',
+                          `${goal_object_letter=="E"? "C":"E"} + ${goal_object_letter=="H"? "D":"H"} → ${goal_object_letter=="L"? "M":"L"}, &nbsp;&nbsp; ${goal_object_letter=="B"? "A":"B"} + ${goal_object_letter=="F"? "G":"F"} → ${goal_object_letter=="K"? "D":"K"}, &nbsp;&nbsp;   ${goal_object_letter=="F"? "G":"F"} + ${goal_object_letter=="K"? "D":"K"} → ${goal_object_letter}`,
+                          `${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}`], 
+                required: true
+            }
+        ],
+        on_finish: function(data) {
+            var responses = data.response
+            if (responses.Q0.includes('Potion') == true && responses.Q1.includes('simultaneously') == true && responses.Q2.includes('earlier') == true && responses.Q3.includes('number') == true && responses.Q4.includes(einstellung3_eq) == true) {
+                failed_comprehension_questions = false
+            }
+        }
+    };
+
+    } else if (test_cond==1){
+
+    var training_instructions = [
+    `You can hover over the two panels to see which ingredients are initially available, and which equations are permitted. <br>
+    The only solution here is the practiced equation family's last step: ${einstellung_eq}. Type it in and click "Submit".`,
+    `Good! The same solution applies here: ${einstellung_eq}. <br>You can see how the initially available ingredients differ across trials.`,
+    `We'd like to use ${einstellung_eq}, but ${int_to_letter[9]} is initially unavailable. Produce it first using another equation: ${einstellung2_eq}.`,
+    `Similarly in this example, you need to perform all three steps: ${einstellung3_eq}, ${einstellung2_eq}, ${einstellung_eq}.`,
+    `You're rewarded for submitting fewer equations. Can you produce ${goal_object_letter} with one equation, instead of two?`,
+    ];
+
+    var introPages = [
+    `<p style='font-size: 30px'> Become an alchemist! </p>
+        <p> Imagine you are a magical alchemist, commissioned to produce potions from available ingredients.
+        <br> You goal is to produce <b>Potion ${goal_object_letter}</b>, which is an essential, life-saving medicine!</p>`
+        +'<img src="img/alchemist.png" height="400"></img>',
+
+        `<p>To produce Potion ${goal_object_letter}, you must rely on <b>ingredients</b> denoted by other English letters.<br>
+            Certain pairs of ingredients (X,Y) can react to <b>produce</b> a third ingredient (Z). <br> 
+            This can be expressed as an <b>equation</b>: <i>X + Y → Z</i>. <br></p>
+            <p> You'll always have an <b>"alchemy cheat-sheet"</b>, listing all possible reactions. <br>
+            The one below serves as an example, with all produced ingredients covered by "?".</p>
+            <b>You must use equation(s) on the cheat-sheet to ultimately produce Potion ${goal_object_letter}</b>.</p>
+            <div class="stim-box"><div class="center-cheatsheet">${stim_html_instructions_safe}</div></div>`,
+
+        `<p> However, not all ingredients are <b style="color:#4CBB17">initially available</b>. <br>
+            On each trial, you can <b>find the initially available ingredients</b> in the <b>left panel</b>. The cheat-sheet is located in the <b>right panel</b>.<br>
+            Note that only one panel is visible at a time. <b>Hover your mouse cursor over either panel to reveal it.</b><br>
+            Within the right panel, <b>hover over "?" on any equation's right-side</b> to reveal the ingredient produced. </p>
+        <img src="img/visual_search_ring_new.png" height="300"></img>
+        <p> To successfully produce Potion ${goal_object_letter}, you must use the ingredients available to you.<br>
+            Luckily, you can produce <b style="color:red">initially nonavailable</b> ingredients via other equations (that only make use of available ingredients), so that they become available for later use.</p>`,
+
+        `<p> The main game consists of <b>${num_test_trials} trials</b>, which differ in the ingredients initially available. <br>
+        In each trial, you will type and submit a list of equations.<br>
+        <div class="rules-block">
+        <div><b>Your submitted list must follow the rules below:</b> </div>
+            <div>1) Each submitted equation must be possible — they must be somewhere <b>on the cheat-sheet</b>.</div>
+            <div>2) The list of submitted equations must <b>ultimately produce Potion ${goal_object_letter}</b>.</div>
+            <div>3) To use an ingredient (on the left side of "→" in some submitted equation), it must either be <b>initially available</b>, or <b>produced by an earlier equation in your submitted list</b> (typed in some row above). Hence, the submitted list order matters!</div>
+            <div>4) You must submit your list <b>within ${test_trial_time_limit} seconds</b> (a countdown will be displayed to you).</div>
+        </div>
+        <p>You can add, remove, or rearrange your list of equations, by clicking on buttons on the right side.<br>
+            Click "Submit" to submit your list of equations.</p>
+            <img src="img/type_equations.png" height="250" style="border: 2px solid black"></img>`,
+            
+    ` <p> Now, let\'s move onto payment! </p>
+        <p>On each trial, your <b style="color:green">\$bonus\$</b> depends on the number of equations submitted.<br>
+            Because reactions are costly, <b style="color:green">the fewer equations you submit, the greater your bonus is.</b></p>
+        <p> On each trial, the first equation is always free. Each additional equation costs ${cost_per_reaction_dollars*100} cent.<br> 
+            Specifically, your <b style="color:green">Bonus = \$${max_bonus_per_trial} – \$${cost_per_reaction_dollars} × (#submitted equations - 1)</b>, but will never be negative.<br>
+            This allows you to submit ${Math.ceil(1 + max_bonus_per_trial / cost_per_reaction_dollars)} equations per trial, which is ample for the task!</p>
+        <p>However, <b>rule violations</b> lower your bonus to <b>\$0</b>, no matter how few equations you submit: <br>
+            If <b style="color:red">you submit equations not on the cheat-sheet</b>, you will earn <b style="color:red">\$0</b> for that trial.<br>
+            If <b style="color:red">the list of submitted equations doesn't produce Potion ${goal_object_letter}</b>, you will earn <b style="color:red">\$0</b>.<br>
+            If <b style="color:red">any submitted equation uses an ingredient not initially available or produced by an earlier equation</b>, you will earn <b style="color:red">\$0</b>.<br>
+            If you <b style="color:red">didn't submit anything in ${test_trial_time_limit} seconds</b>, you will earn <b style="color:red">\$0</b>.</p>
+        <p>There is no feedback after each trial. Upon submission/time-outs, you'll automatically proceed to the next trial.</p>`,
+        
+        `<p>A final reminder:</p>
+        <p> There is <b>a practiced family of equations</b>:<br>
+        <div><span style="font-size: 24px;"><b>${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}</b></span></div><br>
+        These equations can always be used to produce <b>Potion ${goal_object_letter}</b>, and will always be displayed during the game.</p>
+        <p>On each trial, <b>at least one part of this equation family is feasible</b> given the ingredients initially available.<br>
+        Depending on the trial, this may involve using all three equations, the last two, or just the final equation.</p>
+        <p>Whether to rely on this equation family is entirely up to you.</p>`,
+
+
+        `<p> If you understand the rules, please click 'Next' to go to the <b>comprehension check</b>. 
+        <br>Otherwise, click 'Previous' to view the instructions again. </p>
+        <p>If you don't get the comprehension questions correct, you won't be able to move on. </p>`
+
+        ];
+    
+
+    var comprehension_questions = {
+        type: 'survey-multi-choice',
+        preamble: `Comprehension questions:`,
+        questions: [
+            {
+                prompt: '<b> 1. What is the goal of the game? </b>',
+                options: ['To type a list of equations that produce Potion '+goal_object_letter+'.',
+                          'To copy all equations from the cheat-sheet.',
+                          'To randomly type equations that you like.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 2. What do the two panels do? </b>',
+                options: ['There is only one panel, so the question\'s premise does not hold.',
+                          'Left panel contains the initially available ingredients. Right panel contains the alchemy cheat-sheet. Both are displayed simultaneously.',
+                          'Left panel contains the initially available ingredients. Right panel contains the alchemy cheat-sheet. I can toggle between them using my mouse cursor.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 3. If an ingredient is not initially available, can you still use it in your submitted equations? </b>',
+                options: ['No, I can\'t. I will receive a \$0 bonus for that trial.',
+                          'Only if I have produced the ingredient via an earlier equation in my submitted list.',
+                          'All ingredients are initially available, so the question\'s premise does not hold.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 4. What determines your bonus? </b>',
+                options: ['How fast I submit the list of equations.',
+                          'The number of equations submitted. They must be 1) in the cheat-sheet, 2) produce Potion '+goal_object_letter+', 3) involve ingredients that are either initially available or produced earlier, and 4) be submitted within '+test_trial_time_limit+' seconds.',
+                          'How consistent my lists of equations are across trials.'], 
+                required: true
+            },
+            {
+                prompt: '<b> 5. Which of the following is the "practiced equation family"? </b>',
+                options: ['There is no practiced equation family for the game.',
+                          `${goal_object_letter=="E"? "C":"E"} + ${goal_object_letter=="H"? "D":"H"} → ${goal_object_letter=="L"? "M":"L"}, &nbsp;&nbsp; ${goal_object_letter=="B"? "A":"B"} + ${goal_object_letter=="F"? "G":"F"} → ${goal_object_letter=="K"? "D":"K"}, &nbsp;&nbsp;   ${goal_object_letter=="F"? "G":"F"} + ${goal_object_letter=="K"? "D":"K"} → ${goal_object_letter}`,
+                          `${einstellung3_eq}, &nbsp;&nbsp; ${einstellung2_eq}, &nbsp;&nbsp; ${einstellung_eq}`], 
+                required: true
+            }
+        ],
+        on_finish: function(data) {
+            var responses = data.response
+            if (responses.Q0.includes('Potion') == true && responses.Q1.includes('toggle') == true && responses.Q2.includes('earlier') == true && responses.Q3.includes('number') == true && responses.Q4.includes(einstellung3_eq) == true) {
+                failed_comprehension_questions = false
+            }
+        }
+    };
+    }
+    
+
+
+}
+
+var instructions2 = {
+    type: "instructions",
+    pages: [
+    `<p>Congratulations on passing the comprehension check!</p>
+    <p>Next, you will complete <b>${states_train_paired.length} practice trials</b> to understand how the game works.<br>
+        These trials are meant for learning and do <b>not</b> count toward your bonus.</p>
+    <p><i>During practice, you will receive feedback on whether your submissions are correct.<br>
+        The time countdown will be shown, but you won't be cut off when it reaches zero.<br>
+        Note that feedback and unlimited time will <b>NOT</b> be available in the main game later!</i></p>
+    <p>We thank you for taking the time to complete this task to the best of your ability.</p>
+    <p><b>Please proceed when you are ready to begin.</b></p>`
+    ],
+    show_clickable_nav: true
+};
+
+    var instructions2point5 = {
+    type: "instructions",
+    pages: [
+    `<p>Congratulations on completing the block!</p>
+    <p>Next, you will complete another <b>${states_train2_paired.length} practice trials</b>, followed by the main game.<p>
+    <p>These practice trials resemble the main game's difficulty. Please use them to determine your strategy.<br>
+    <p><b>Please proceed when you are ready to begin.</b></p>`
+    ],
+    show_clickable_nav: true
+};
+
+
+
+var instructions = {
+  type: 'instructions',
+  pages: introPages,
+  show_clickable_nav: true,
+  allow_backward: true,
+  show_page_number: true,
+   
+};
+
+   var gap = {
+        type: 'html-keyboard-response',
+        stimulus: " ",
+        choices: [],
+        trial_duration: 1000
+    };
+
+    var failed_comprehension_questions = true;
+    
+    var fail_page = {
+          type: 'html-button-response',
+          stimulus: "<p> Oops! You did not pass the comprehension check. </p>",
+          choices: ['<p style="font-size: 20px"><b> View instructions again </b></p>']
+    };
+
+    var fail = {
+        timeline: [fail_page],
+        conditional_function: function() {
+            return failed_comprehension_questions
+        }
+    };
+
+
+    // Use this code to include comprehension questions
+    var inst_comprehension = {
+        timeline: [instructions, gap, comprehension_questions, fail],
+        loop_function: function(){
+            return failed_comprehension_questions
+        }
+    };
+
+    function experiment_cond_instructions(display_format, condition){
+        var instructions3 = {
+            type: "instructions",
+            pages: [
+            `<p>Congratulations on completing all practice trials. You are about to start the <b>main game</b>!</p>
+            <p><b>Gentle Reminders:</b></p>
+            <p>Please make sure to follow the instructions on the screen carefully.</p>
+            <p>In order for your data to be saved successfully, you need to complete the full game, <br>advancing to the completion code screen at the end of the game.</p>`,
+
+            `<p>The game differs from practice trials: there is no longer feedback after submission, and time limits are for real.</p>
+            `,
+        
+            `<p>The remaining game will take about ${num_test_trials} minutes to complete.<br>
+                There are no breaks in between, so please start the game only after you feel ready.</p>
+            <p>You will earn a guaranteed $`+base_pay_dollars.toFixed(2)+` for completion and a potential bonus payment up to $`+bonus_max_dollars.toFixed(2)+`. </p>
+            <p>We thank you for taking the time to complete this task to the best of your ability.</p>
+            <p><b>Please proceed when you are ready to begin the game.</b></p>`
+            ],
+            show_clickable_nav: true
+        };
+        return(instructions3)
+    }
+
+
+    /*******************
+     * TRIAL DEFINITION
+     *******************/
+
+function equationTrial(condition, equations, trial_idx, color_vector_paired,
+  randomize_equation_order_display, sort_equation_reactants,
+  visual_search_array_display, randomize_visual_search_array,
+  greekDistractors, num_objects_displayed, randomize_equation_order_display_once, require_valid_solution = false,
+  prompt_extra=null, time_limit_s = -1,   soft_time_limit = false   // NEW
+){
+  var state_group = color_vector_paired.state_group;
+  var state_idx = color_vector_paired.state_idx;
+  var color_vector = color_vector_paired.state;
+  var stim_array;
+  var visual_search_array_displayed = NaN;
+  var preable_string;
+
+  let vsHoverLog = {
+    t0: performance.now(),         // trial onset reference
+    panel_hovers: [],
+    product_hovers: [],
+    _finalizePanels: null
+  };
+
+
+
+  function readCurrentRowsFromDOM(rowsEl, orderEl) {
+  // ensure orderEl matches current DOM
+  const ids = Array.from(rowsEl.querySelectorAll('.eq-row')).map(r => r.dataset.rowId);
+  orderEl.value = ids.join(',');
+
+  const rows = [];
+  ids.forEach(id => {
+    const Ael = rowsEl.querySelector(`[name="row_${id}_A"]`);
+    const Bel = rowsEl.querySelector(`[name="row_${id}_B"]`);
+    const Cel = rowsEl.querySelector(`[name="row_${id}_C"]`);
+    const A0 = (Ael ? Ael.value : '').toUpperCase().slice(0,1);
+    const B0 = (Bel ? Bel.value : '').toUpperCase().slice(0,1);
+    const C0 = (Cel ? Cel.value : '').toUpperCase().slice(0,1);
+
+    const A = validateOneChar(A0) ? A0 : '';
+    const B = validateOneChar(B0) ? B0 : '';
+    const C = validateOneChar(C0) ? C0 : '';
+    rows.push({ A, B, C, row_id: id });
+  });
+
+  // rearrange within each eq (LHS sorted)
+  const byOrder = (ch) => {
+    const idx = ALLOWED_CHARS.indexOf(ch);
+    return idx >= 0 ? idx : Number.POSITIVE_INFINITY;
+  };
+
+  const submitted_eqs_rearranged = rows.map(({A,B,C}) => {
+    const aOK = validateOneChar(A), bOK = validateOneChar(B), cOK = validateOneChar(C);
+    if (aOK && bOK) {
+      const [L1, L2] = byOrder(A) <= byOrder(B) ? [A,B] : [B,A];
+      return `${L1} + ${L2} = ${cOK ? C : '∅'}`;
+    }
+    return `${aOK ? A : '∅'} + ${bOK ? B : '∅'} = ${cOK ? C : '∅'}`;
+  });
+
+  return { rows, submitted_eqs_rearranged };
+}
+
+
+
+
+  // UNIQUE IDs per trial
+  const eqListId = `equation-list-${trial_idx}`;
+  const rowsId   = `rows-${trial_idx}`;
+  const addRowId = `add-row-${trial_idx}`;
+  const orderId  = `row_order-${trial_idx}`;
+
+  // IMPORTANT: declare local variables (avoid accidental globals)
+  var stim_array = generateEquationHTML(
+    equations,
+    color_vector,
+    randomize_equation_order_display,
+    sort_equation_reactants,
+    condition == 1,
+    equations_shuffle_idx,
+    randomize_equation_order_display_once,
+  );
+
+
+  if(display_format=="visualsearch"){
+    if(condition==0){ // Easy condition
+        stim_array = generateTwoPanelStimulus(equations, color_vector, randomize_equation_order_display, sort_equation_reactants,visual_search_array_display, randomize_visual_search_array, greekDistractors, num_objects_displayed, condition == 1,
+        equations_shuffle_idx,
+        randomize_equation_order_display_once,
+        false,           // hide_products
+        [], //[0,2,6]         // always_show_product_eq_indices
+        );
+        visual_search_array_displayed = stim_array.allLetters;
+        preamble_string = "To use a letter absent from the left panel ring, you must first produce it using other equations."
+    } else { // Hard condition
+        stim_array = generateTwoPanelStimulus(equations, color_vector, randomize_equation_order_display, sort_equation_reactants,visual_search_array_display, randomize_visual_search_array, greekDistractors, num_objects_displayed, condition == 1,
+        equations_shuffle_idx,
+        randomize_equation_order_display_once,
+        true,           // hide_products
+        [], //[0,2,6]         // always_show_product_eq_indices
+        );
+        visual_search_array_displayed = stim_array.allLetters;
+        preamble_string = "To use a letter absent from the left panel ring, you must first produce it using other equations."
+    }
+    var test_trial_instructions_reminder = "";
+  } else if(display_format=="color"){
+      let visual_search_array_displayed = NaN;
+      var test_trial_instructions_reminder = ` (<span style="color:red">red</span>)`;
+  }
+
+  // If your generateEquationHTML returns a bundle object:
+  // stim_array.stim_html should contain id="equation-list" (generic)
+  let stim_html = stim_array.stim_html;
+  const eqs_shuffled = stim_array.eqs;
+  const eqs_shuffled_displayed = stim_array.eqs_displayed;
+  
+  // Replace equation-list id with trial-specific id
+  stim_html = stim_html.replace('id="equation-list"', `id="${eqListId}"`);
+
+    const errorBoxId = `invalid-msg-${trial_idx}`;
+
+    const stim = `
+    <div id="${errorBoxId}" style="
+        display:none; margin: 10px auto 12px auto;
+        max-width: 900px;
+        border: 1px solid #f5c2c7;
+        background: #f8d7da;
+        color: #842029;
+        padding: 10px 12px;
+        border-radius: 8px;
+        text-align: left;">
+        <b>Invalid solution!</b>
+        <div id="${errorBoxId}-detail" style="margin-top:6px;"></div>
+    </div>
+
+    <div id="stimulus-top-${trial_idx}" class="stim-box" style="margin-bottom:12px; display:flex; justify-content:center; align-items:center;">
+        ${stim_html}
+    </div>
+
+    <div id="equation-builder-${trial_idx}" style="margin-bottom:12px;">
+        <div id="${rowsId}" style="display:flex; flex-direction:column; justify-content:center; align-items:center;"></div>
+        <div><button id="${addRowId}" type="button">+ Add equation</button></div>
+        <input type="hidden" name="row_order" id="${orderId}" value="">
+    </div>
+    `;
+
+
+  // Per-trial hover logger in closure (better than a global)
+  let hoverLogger = null;
+  let attemptedSubmissions = [];
+
+  // --- Time limit state (closure, saved into data in on_finish)
+  let timeExceeded = false;
+  let timeLimitSec = time_limit_s;
+
+  // --- timers
+  let countdownEl = null;
+  let countdownTimer = null;
+  let timeoutTimer = null;
+  const countdownId = `countdown-${trial_idx}`;
+  const msgId = `trial-msg-${trial_idx}`;
+
+  // --- process snapshot if timeout happens
+  let timeout_snapshot = null;
+
+  // guard against double-finishing
+  let trialEnded = false;
+  let trialStartMs = null;
+
+
+    // ---- helpers used by time limit + submit interception ----
+  function clearTimersAndCountdown() {
+    if (countdownTimer) clearInterval(countdownTimer);
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    countdownTimer = null;
+    timeoutTimer = null;
+    if (countdownEl) countdownEl = null;
+    removeOverlay(countdownId);  // safe if missing
+  }
+
+  function endTrialWithMessage({ timedOut, messageHTML, responsesObj }) {
+    if (trialEnded) return;
+    trialEnded = true;
+
+    clearTimersAndCountdown();
+
+    // always record these into the trial data
+    const payload = {
+      responses: JSON.stringify(responsesObj || {}),
+      time_limit_s: timeLimitSec,
+      time_exceeded: Number(!!timedOut),
+      timeout_snapshot: timeout_snapshot  // null if none
+    };
+
+    showCenterMessageOverlay(msgId, messageHTML);
+
+    setTimeout(() => {
+      hideOverlay(msgId);
+      removeOverlay(msgId);
+      jsPsych.finishTrial(payload);
+    }, iti_duration);
+  }
+
+  function readCurrentFormAsObject() {
+    const form = document.querySelector('#jspsych-survey-html-form form') || document.querySelector('form');
+    const obj = {};
+    if (!form) return obj;
+    const fd = new FormData(form);
+    fd.forEach((value, key) => { obj[key] = value; });
+    return obj;
+  }
+
+  function finalizeProcessLogsForThisTrial(targetObj) {
+    // color hover
+    if (condition == 1 && display_format == "color") {
+      if (hoverLogger) {
+        hoverLogger.finalize();
+        targetObj.equation_hover_log = hoverLogger.logs;
+      } else {
+        targetObj.equation_hover_log = [];
+      }
+    }
+    // visualsearch hover
+    if (display_format == "visualsearch" && condition == 1) {
+      if (vsHoverLog && typeof vsHoverLog._finalizePanels === 'function') {
+        vsHoverLog._finalizePanels();
+      }
+      targetObj.visualsearch_hover_log = vsHoverLog;
+    }
+  }
+
+
+
+  return {
+    type: 'survey-html-form',
+    preamble: function(){
+        var preamble = `
+            <p>Submit a list of equations that ultimately produces <b>Potion ${goal_object_letter}</b>. <br>
+            To use an ingredient that is initially unavailable${test_trial_instructions_reminder}, you must first produce it using other equations.<br>
+            Enter as many equations as you like. Add, delete, or reorder equations as needed.</p>`;
+        if(prompt_extra!==null){
+            preamble = preamble + "<p><i>"+prompt_extra+"</i></p>";
+        }
+
+        return('<div style="margin-bottom:10px;">' + preamble + '</div>')
+    },
+    html: function(){ return stim; },
+    button_label: 'Submit',
+
+    on_load: function () {
+      // Use THIS trial’s color_vector and THIS trial’s equation list id
+        if(condition==1){
+            if(display_format=="color"){
+                hoverLogger = setupEquationHoverRevealAndLogging(color_vector, eqListId);
+            } else if (display_format=="visualsearch"){
+                setupPanelHoverToggleWithLogging(vsHoverLog);                 // stage 1 + panel timing
+                setupRightPanelProductRevealWithLogging('equation-list-right', vsHoverLog); // stage 2 + product timing
+            }
+        }
+
+      const rowsEl  = document.getElementById(rowsId);
+      const orderEl = document.getElementById(orderId);
+      const addBtn  = document.getElementById(addRowId);
+
+      let nextRowId = 1;
+
+      function refreshOrderHidden() {
+        const ids = Array.from(rowsEl.querySelectorAll('.eq-row')).map(r => r.dataset.rowId);
+        orderEl.value = ids.join(',');
+      }
+
+      function wireRowButtons(rowDiv) {
+        const up   = rowDiv.querySelector('.eq-up');
+        const down = rowDiv.querySelector('.eq-down');
+        const del  = rowDiv.querySelector('.eq-del');
+
+        up.addEventListener('click', () => {
+          const prev = rowDiv.previousElementSibling;
+          if (prev) rowsEl.insertBefore(rowDiv, prev);
+          refreshOrderHidden();
+        });
+
+        down.addEventListener('click', () => {
+          const next = rowDiv.nextElementSibling;
+          if (next) rowsEl.insertBefore(next, rowDiv);
+          refreshOrderHidden();
+        });
+
+        del.addEventListener('click', () => {
+          rowDiv.remove();
+          refreshOrderHidden();
+        });
+      }
+
+      function addRow() {
+        const id = nextRowId++;
+        rowsEl.insertAdjacentHTML('beforeend', rowHTML(id));
+        const newRow = rowsEl.lastElementChild;
+        wireRowButtons(newRow);
+        wireSymbolInputs(newRow);
+        refreshOrderHidden();
+        const first = newRow.querySelector('input.sym');
+        if (first) first.focus();
+      }
+
+      addRow();
+      addBtn.addEventListener('click', addRow);
+      wireSymbolInputs(rowsEl);
+
+      // Time limit per trial
+      const t0 = performance.now();
+      trialStartMs = t0;
+
+
+      if (timeLimitSec !== -1) {
+        countdownEl = createCountdownOverlay(countdownId);
+
+        function updateCountdown() {
+          const elapsed = (performance.now() - t0) / 1000;
+          const remaining = Math.ceil(timeLimitSec - elapsed);
+
+          // Show negative numbers in soft mode
+          const displayVal = soft_time_limit ? remaining : Math.max(0, remaining);
+          countdownEl.textContent = String(displayVal);
+
+          // Color: red when overtime
+          if (remaining <= 0) {
+            countdownEl.style.color = '#b00020';  // red
+          } else if (remaining<10) {
+              countdownEl.style.color = 'orange';     // black
+          } else {
+            countdownEl.style.color = 'green';     // black
+          }
+        }
+
+        updateCountdown();
+        countdownTimer = setInterval(updateCountdown, 200);
+
+        // HARD time limit only if soft_time_limit is false
+        if (!soft_time_limit) {
+          timeoutTimer = setTimeout(() => {
+            timeExceeded = true;
+
+            const { rows, submitted_eqs_rearranged } = readCurrentRowsFromDOM(rowsEl, orderEl);
+            timeout_snapshot = {
+              t_ms: performance.now() - t0,
+              equations_structured: rows,
+              submitted_eqs_rearranged: submitted_eqs_rearranged,
+              raw_form: readCurrentFormAsObject(),
+              attemptedSubmissions_so_far: attemptedSubmissions.slice()
+            };
+
+            const snapLogs = {};
+            finalizeProcessLogsForThisTrial(snapLogs);
+            timeout_snapshot.logs = snapLogs;
+
+            endTrialWithMessage({
+              timedOut: true,
+              messageHTML: `<b style="color:#b00020;">Time exceeded.</b><br><div style="margin-top:10px;">Moving on to the next trial...</div>`,
+              responsesObj: timeout_snapshot.raw_form
+            });
+          }, timeLimitSec * 1000);
+        }
+      }
+      // ---- NEW: Intercept FORM submit (robust across browsers) ----
+        // ---- Intercept submit for jsPsych 6 survey-html-form ----
+const formEl = document.getElementById('jspsych-survey-html-form'); // <-- this IS the <form>
+if (formEl) {
+  // Also intercept clicking the submit control directly (jsPsych uses <input type="submit">)
+  const submitEl = document.getElementById('jspsych-survey-html-form-next');
+
+  // Avoid double-binding if this on_load runs again somehow
+  if (!formEl.__submitInterceptBound) {
+    formEl.__submitInterceptBound = true;
+
+    const handleAttemptSubmit = (e) => {
+      if (trialEnded) return;
+
+      // Block jsPsych default submission
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      // Hard time limit: ignore submits after time
+      if (timeLimitSec !== -1 && !soft_time_limit) {
+        const elapsed = (performance.now() - t0) / 1000;
+        if (elapsed >= timeLimitSec) return;
+      }
+
+      // ---- Require at least ONE equation row ----
+      clearMissingBlankHighlights(rowsEl);
+      const allRowsNow = Array.from(rowsEl.querySelectorAll('.eq-row'));
+      if (allRowsNow.length === 0) {
+        const errorBox = document.getElementById(errorBoxId);
+        const errorDetail = document.getElementById(`${errorBoxId}-detail`);
+        if (errorBox) errorBox.style.display = 'block';
+        if (errorDetail) errorDetail.innerHTML = 'Please add at least one equation before submitting.';
+        const addBtnEl = document.getElementById(addRowId);
+        if (addBtnEl) addBtnEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      // ---- Require ALL blanks filled ----
+      const incomplete = findFirstIncompleteBlank(rowsEl);
+      if (incomplete) {
+        incomplete.missing.forEach(inp => inp.classList.add('missing-blank'));
+
+        const errorBox = document.getElementById(errorBoxId);
+        const errorDetail = document.getElementById(`${errorBoxId}-detail`);
+        if (errorBox) errorBox.style.display = 'block';
+        if (errorDetail) {
+          errorDetail.innerHTML =
+            'Please fill in all blanks before submitting. We highlighted the first incomplete row.';
+        }
+
+        incomplete.row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const firstMissing = incomplete.missing[0];
+        if (firstMissing) setTimeout(() => { firstMissing.focus(); firstMissing.select(); }, 150);
+        return;
+      }
+
+      // ---- Read & validate attempt ----
+      const { rows, submitted_eqs_rearranged } = readCurrentRowsFromDOM(rowsEl, orderEl);
+
+      const check0 = validateSubmittedEquations(
+        submitted_eqs_rearranged,
+        letter_to_int,
+        equations,
+        color_vector,
+        goal_object,
+        equation_order_matters
+      );
+
+      attemptedSubmissions.push({
+        t_ms: performance.now() - t0,
+        equations_structured: rows,
+        submitted_eqs_rearranged: submitted_eqs_rearranged,
+        check: check0
+      });
+
+      // ---- Gate by require_valid_solution ----
+      if (require_valid_solution && !check0.is_legit) {
+        const errorBox = document.getElementById(errorBoxId);
+        const errorDetail = document.getElementById(`${errorBoxId}-detail`);
+        if (errorBox) errorBox.style.display = 'block';
+
+        const reasons = [];
+        if (check0.invalid_equations?.length) reasons.push('Some equations are not on the cheat-sheet.');
+        if (check0.goal_produced === false) reasons.push(`Potion ${goal_object_letter} is not produced.`);
+        if (check0.order_violations?.length) reasons.push('Some ingredients are used before being available.');
+        if (check0.missing_produced_ints?.length) reasons.push('Some initially absent ingredients used were never produced.');
+
+        if (errorDetail) {
+          errorDetail.innerHTML = reasons.length
+            ? reasons.map(r => `• ${r}`).join('<br>')
+            : 'Please check the rules and try again.';
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      // ---- Success: finish via your custom path (NO browser validation popup) ----
+      const rawFormObj = readCurrentFormAsObject();
+      endTrialWithMessage({
+        timedOut: false,
+        messageHTML: `<b style="color:#116611;">Submitted.</b><br><div style="margin-top:10px;">Moving on to the next trial...</div>`,
+        responsesObj: rawFormObj
+      });
+    };
+
+    // Intercept Enter key (form submit)
+    formEl.addEventListener('submit', handleAttemptSubmit, true);
+
+    // Intercept clicking the submit button explicitly
+    if (submitEl) submitEl.addEventListener('click', handleAttemptSubmit, true);
+  }
+}
+// If formEl is missing, do nothing silently (no warnings)
+
+
+
+    },
+
+    on_finish: function (data) {
+
+      // Track trial completion time
+      data.time_limit_s = timeLimitSec;
+      data.is_soft_time_limit = Number(soft_time_limit);
+      data.time_exceeded = Number(timeExceeded);
+
+      // In HARD mode, timeExceeded already indicates forced timeout.
+      // In SOFT mode, timeExceeded should remain false, but time_over_limit_s tells you if they went over.
+      const t_end = performance.now();
+      const elapsed_s = (trialStartMs ? (t_end - trialStartMs) / 1000 : null);
+      data.trial_elapsed_s = elapsed_s;
+      data.time_over_limit_s = (timeLimitSec !== -1 && elapsed_s != null)
+        ? Math.max(0, elapsed_s - timeLimitSec)
+        : null;
+
+      // Save all attempts including invalid ones (you already do this)
+      data.attempted_submissions = attemptedSubmissions;
+      data.n_attempts = attemptedSubmissions.length;
+
+      // If timeout happened, store the snapshot
+      data.timeout_snapshot = timeout_snapshot; // null if not timed out
+
+        // finalize hover logs
+        if (condition == 1) {
+            if (hoverLogger) {
+            hoverLogger.finalize();
+            data.equation_hover_log = hoverLogger.logs;
+            // data.equation_hover_debug = hoverLogger.debug();
+            } else {
+            data.equation_hover_log = [];
+            }
+        }
+        if (display_format == "visualsearch" && condition == 1) {
+          if (vsHoverLog && typeof vsHoverLog._finalizePanels === 'function') {
+            vsHoverLog._finalizePanels(); // closes last interval cleanly
+          }
+          data.visualsearch_hover_log = vsHoverLog;
+        }
+
+        //console.log(data.equation_hover_log)
+
+
+        // ---- Robustly read survey-html-form result as object ----
+        let respObj = {};
+        try {
+        if (typeof data.responses === 'string' && data.responses.trim().length > 0 && data.responses !== 'undefined') {
+            respObj = JSON.parse(data.responses);
+        } else if (typeof data.response === 'string' && data.response.trim().length > 0 && data.response !== 'undefined') {
+            respObj = JSON.parse(data.response);
+        } else if (data.responses && typeof data.responses === 'object') {
+            respObj = data.responses;
+        } else if (data.response && typeof data.response === 'object') {
+            respObj = data.response;
+        } else {
+            respObj = {};
+        }
+        } catch (e) {
+        console.warn('Could not parse survey-html-form responses:', e, data);
+        respObj = {};
+        }
+
+        // Pull row order
+        const orderStr = respObj.row_order || '';
+        const ids = orderStr.split(',').map(s => s.trim()).filter(Boolean);
+
+        // Final belt & suspenders: enforce 1 char + allowed set
+        const rows = [];
+        const normalizedStrings = [];
+        ids.forEach(id => {
+        const A0 = ((respObj[`row_${id}_A`] || '') + '').toUpperCase().slice(0,1);
+        const B0 = ((respObj[`row_${id}_B`] || '') + '').toUpperCase().slice(0,1);
+        const C0 = ((respObj[`row_${id}_C`] || '') + '').toUpperCase().slice(0,1);
+
+        const A = validateOneChar(A0) ? A0 : '';
+        const B = validateOneChar(B0) ? B0 : '';
+        const C = validateOneChar(C0) ? C0 : '';
+
+        rows.push({ A, B, C, row_id: id });
+        normalizedStrings.push(`${A || '∅'} + ${B || '∅'} = ${C || '∅'}`);
+        });
+
+        data.equations_structured = rows;            // [{A,B,C,row_id}, ...]
+        data.equations_normalized = normalizedStrings; // ["A + B = C", ...]
+        data.n_equations = rows.length;
+
+        // Helper: position of a token in your whitelist order
+        const byOrder = (ch) => {
+        const idx = ALLOWED_CHARS.indexOf(ch);
+        return idx >= 0 ? idx : Number.POSITIVE_INFINITY; // unknowns last
+        };
+
+        // Build rearranged (sort LHS within each equation)
+        const equations_normalized_rearranged = rows.map(({ A, B, C }) => {
+        const aOK = validateOneChar(A);
+        const bOK = validateOneChar(B);
+        const cOK = validateOneChar(C);
+
+        if (aOK && bOK) {
+            const [L1, L2] = byOrder(A) <= byOrder(B) ? [A, B] : [B, A];
+            return `${L1} + ${L2} = ${cOK ? C : '∅'}`;
+        } else {
+            // Keep placeholders for any invalid/missing
+            return `${aOK ? A : '∅'} + ${bOK ? B : '∅'} = ${cOK ? C : '∅'}`;
+        }
+        });
+
+        // Then sort the whole list by the first reactant's order
+        const firstReactant = (s) => (s.split(' + ')[0] || '∅');
+        const submitted_eqs_rearranged_sorted =
+        [...equations_normalized_rearranged].sort((s1, s2) =>
+            byOrder(firstReactant(s1)) - byOrder(firstReactant(s2))
+        );
+
+        // // Convert participants' response (sorted letter equations) into equation indices.
+        // const response_equation_indices = computeResponseEquationIndicesSorted(equations_normalized_rearranged, letter_to_int, equations, false);
+        // const response_equation_indices_sorted = computeResponseEquationIndicesSorted(submitted_eqs_rearranged_sorted, letter_to_int, equations, true);
+        // Validate the solution submitted
+        const check = validateSubmittedEquations(
+            equations_normalized_rearranged,
+            letter_to_int,
+            equations,
+            color_vector,
+            goal_object,
+            equation_order_matters
+            );
+        const success = Number(check.is_legit);
+        //console.log(check);
+
+
+        // Compute success and bonus for this trial
+        const is_testtrial = Number(state_group>0);
+        const num_submitted_eqs = equations_normalized_rearranged.length;
+        num_successful_trials =  num_successful_trials + is_testtrial*success; // Only count test trials for final bonus
+        const bonus_trial = success * (max_bonus_per_trial - cost_per_reaction_dollars*(num_submitted_eqs-1))
+        cumulative_bonus = cumulative_bonus + is_testtrial*bonus_trial; // Only count test trials for final bonus
+        // console.log(bonus_trial);
+        // console.log(num_submitted_eqs)
+        const submitted_eqs_indices = check.response_equation_indices;
+        const use_cached_solution_path = Number(containsOnlySpecificValues(submitted_eqs_indices, [0,2,6]));
+        //console.log(use_cached_solution_path)
+        // Save them
+        data.equations = equations;
+        data.goal_object = goal_object;
+        data.goal_object_letter = goal_object_letter;
+        // Save the mapping as experiment-level data so it appears in every row / in the data file
+        data.int_to_letter = int_to_letter;
+        data.letter_to_int = letter_to_int;
+        // Save display toggles
+        data.randomize_equation_order_display = Number(randomize_equation_order_display);
+        data.randomize_equation_order_display_once = Number(randomize_equation_order_display_once);
+        data.randomize_numberletter_mapping = Number(randomize_numberletter_mapping);
+        data.randomize_visual_search_array = Number(randomize_visual_search_array);
+        data.visual_search_array_display = visual_search_array_display;
+        // Save trial-to-trial information and display.
+        data.condition = condition;
+        data.is_testtrial = is_testtrial;
+        data.trial_idx = trial_idx;
+        data.state_group = state_group;
+        data.state_idx = state_idx;
+        data.state = color_vector;
+        data.eqs_shuffled = eqs_shuffled; // Shuffle the order of equation rows every trial
+        data.eqs_shuffled_displayed = eqs_shuffled_displayed;
+        data.visual_search_array_displayed = visual_search_array_displayed;
+        // Save participant raw and converted responses.
+        data.num_submitted_eqs = num_submitted_eqs;
+        data.submitted_eqs_rearranged = equations_normalized_rearranged;
+        data.submitted_eqs_rearranged_sorted = submitted_eqs_rearranged_sorted; //Only useful when equation_order_matters = False;
+        data.submitted_eqs_indices = submitted_eqs_indices;
+        data.submitted_eqs_indices_sorted = check.response_equation_indices_sorted; //Only useful when equation_order_matters = False;
+        // Save all attempts (including invalid ones)
+        data.attempted_submissions = attemptedSubmissions;
+        // Optionally: save count + last attempt validity
+        data.n_attempts = attemptedSubmissions.length;
+
+        // Evaluate the solution submitted
+        data.submitted_eqs_order_matters = Number(equation_order_matters); // equation order should matter! Can't first use an initially absent object and then create it later.
+        data.is_correct = success;
+        data.use_cached_solution_path = use_cached_solution_path;
+        data.submitted_eqs_order_violations = check.order_violations;
+        data.invalid_rows = check.invalid_rows;
+        data.invalid_equations = check.invalid_equations;
+        data.missing_produced_ints = check.missing_produced_ints;
+        data.goal_object_produced = Number(check.goal_produced);
+        data.bonus_trial = bonus_trial;
+
+        // Optional: hard-block submission if any blank is invalid
+        // If you prefer to force all filled before allowing submit, instead add `required`
+        // natively (already present) and rely on HTML5 validation pre-submit.
+        // Here we just warn in console for inspection:
+        const anyInvalid = rows.some(r => r.A === '' || r.B === '' || r.C === '');
+        if (anyInvalid) {
+        console.warn('Some equation blanks were invalid or empty per ALLOWED_CHARS:', { ALLOWED_CHARS, rows });
+        }
+
+        //console.log(data)
+    }
+    };
+    return(equation_display)
+}
+
+
+function end_experiment(){
+
+    var demographics = {
+      type: 'survey-html-form',
+      preamble:
+        '<p><b>Congratulations for completing all trials!</b></p>' +
+        '<p>We need some more information from you. This will not be associated with your MTurk profile, nor will it impact you in any way.</p>',
+      html: `
+        <!-- form-local styles so we don't affect other trials -->
+        <style>
+          .demog-form { max-width: 840px; margin: 0 auto; text-align: left; }
+          .demog-form .q { margin: 14px 0; }
+          .demog-form fieldset { border: 0 !important; padding: 0; margin: 14px 0; }
+          .demog-form legend   { padding: 0; margin: 0 0 6px 0; }
+          .demog-form .q-title { font-weight: bold; display: inline-flex; align-items: baseline; }
+          .demog-form .q-num { display: inline-block; width: 3ch; text-align: right; margin-right: .5ch; }
+          .demog-form .radio-row { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 4px; }
+          .demog-form .radio-row label { display: inline-flex; align-items: center; gap: 6px; }
+          .demog-form input[type="number"] { width: 5em; }
+          .demog-form textarea { width: 100%; }
+          /* NEW: indent controls to start *after* the 3ch number + spacing */
+          .demog-form .indent { margin-left: calc(3ch + .5ch); }
+        </style>
+
+        <div class="demog-form">
+
+          <!-- 1) Gender (radio, indented) -->
+          <fieldset class="q">
+            <legend class="q-title"><span class="q-num">1)</span> Gender</legend>
+            <div class="radio-row indent">
+              <label><input type="radio" name="gender" value="Female" required> Female</label>
+              <label><input type="radio" name="gender" value="Male" required> Male</label>
+              <label><input type="radio" name="gender" value="Non-binary" required> Non-binary</label>
+              <label><input type="radio" name="gender" value="Other" required> Other</label>
+            </div>
+          </fieldset>
+
+          <!-- 2) Age (number input, indented) -->
+          <div class="q">
+            <label class="q-title" for="age"><span class="q-num">2)</span> Age</label><br>
+            <div class="indent">
+              <input type="number" name="age" id="age" min="18" max="120" step="1" required>
+            </div>
+          </div>
+
+          <!-- 3) Color blindness (radio, indented) -->
+          <fieldset class="q">
+            <legend class="q-title">
+              <span class="q-num">3)</span> Have you ever been diagnosed with color-blindness or color vision deficiency (CVD)?
+            </legend>
+            <div class="radio-row indent">
+              <label><input type="radio" name="color_blindness" value="Yes" required> Yes</label>
+              <label><input type="radio" name="color_blindness" value="No" required> No</label>
+            </div>
+          </fieldset>
+
+          <!-- 4) Summary -->
+          <div class="q">
+            <label class="q-title" for="summary">
+              <span class="q-num">4)</span> Please summarize the task you just completed in 1–2 sentences, so that we know you have been paying attention.
+            </label><br>
+            <textarea name="summary" id="summary" rows="3" required></textarea>
+          </div>
+
+          <!-- 5) Strategy -->
+          <div class="q">
+            <label class="q-title" for="strategy">
+              <span class="q-num">5)</span> Please summarize the strategy you used to complete the task.
+            </label><br>
+            <textarea name="strategy" id="strategy" rows="3" required></textarea>
+          </div>
+
+          <!-- 6) Optional comments -->
+          <div class="q">
+            <label class="q-title" for="comment">
+              <span class="q-num">6)</span> Optional: We’re always trying to improve. Please let us know if you have any comments.
+            </label><br>
+            <textarea name="comment" id="comment" rows="3"></textarea>
+          </div>
+
+        </div>
+      `,
+      button_label: 'Continue',
+      on_finish: function (data) {
+        let resp = data.response;
+        if (!resp && typeof data.responses === 'string') {
+          try { resp = JSON.parse(data.responses); } catch(e) { resp = {}; }
+        }
+        data.gender           = resp?.gender ?? '';
+        data.age              = resp?.age !== undefined && resp.age !== '' ? Number(resp.age) : null;
+        data.color_blindness  = resp?.color_blindness ?? '';
+        data.summary          = resp?.summary ?? '';
+        data.strategy          = resp?.strategy ?? '';
+        data.comment          = resp?.comment ?? '';
+        data.response         = resp;
+
+        const interaction = jsPsych.data.getInteractionData();
+        data.screen = interaction.json();
+      }
+    };
+
+        // save data
+    
+    /* Save data to CSV */
+    // Define redirect link for Qualtrics and add Turk variables
+    var turkInfo = jsPsych.turk.turkInfo();
+    // Add MTurk info to CSV
+    jsPsych.data.addProperties({
+    assignmentID: turkInfo.assignmentId
+    });
+    jsPsych.data.addProperties({
+    mturkID: turkInfo.workerId
+    });
+    jsPsych.data.addProperties({
+    hitID: turkInfo.hitId
+    });
+    function saveData(name, data) {
+    	var xhr = new XMLHttpRequest();
+          xhr.open('POST', 'write_data.php');
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.send(JSON.stringify({filename: name, filedata: data}));    
+    } 
+
+    let save_data = {
+        type: "call-function",
+        func: function(){ 
+            jsPsych.data.addDataToLastTrial({num_successful_trials:num_successful_trials, cumulative_bonus_unbounded: cumulative_bonus, cumulative_bonus: Math.max(0,cumulative_bonus)});
+            //jsPsych.data.get().localSave('csv', 'maze_data.csv');
+            saveData(turkInfo.workerId, jsPsych.data.get().csv());
+        }
+    }
+
+    
+    var completion = {
+    type: 'html-keyboard-response',
+    stimulus: () => `
+        <div class="intro-slides">                         <!-- NEW -->
+        <p><b>Thank you for participating in our study!</b></p>
+        <p>
+            You have successfully completed <b>${num_successful_trials}</b> trials(s).<br>
+            Your total bonus is <b style="color:green">\$${Math.round(100*Math.max(0,cumulative_bonus))/100}</b>.<br>
+            We will send your bonus soon after we process the data.
+        </p>
+        <p>
+            Your completion code is
+            <b style="color:red">dfBG74sfa9q</b>.<br>
+            Please copy it before you exit this page.
+        </p>
+        </div>`,
+    choices: [],
+    };
+    return [demographics, save_data, completion]
+
+}
+
+    /*******************
+     * RUN
+     *******************/
+
+    var timeline = [];
+    // Add a subject ID to all trials
+    jsPsych.data.addProperties({
+      experiment: "exp2" + display_format,
+      test_condition:  test_cond,
+    });
+
+    timeline.push(consent);
+    timeline.push(preload);
+    timeline.push(full_screen);
+    timeline.push(inst_comprehension)
+    timeline.push(instructions2);
+    for (let i=0; i<states_train_paired.length; i++){
+        timeline.push(equationTrial(train_cond, equations_example, i, states_train_paired[i], randomize_equation_order_display, sort_equation_reactants, visual_search_array_display, randomize_visual_search_array, [], num_objects_displayed, randomize_equation_order_display_once, true, test_default_solution_prompt + training_instructions[i], test_trial_time_limit, true));
+    }
+    timeline.push(instructions2point5);
+    for (let i=0; i<states_train2_paired.length; i++){
+        timeline.push(equationTrial(train_cond, equations_example, i,  states_train2_paired[i], randomize_equation_order_display, sort_equation_reactants, visual_search_array_display, randomize_visual_search_array, greekDistractors, num_objects_displayed, randomize_equation_order_display_once, true, test_default_solution_prompt, test_trial_time_limit, true));
+    }
+    timeline.push(experiment_cond_instructions(display_format, test_cond));
+    for (let i=0; i<states_test_paired.length; i++){
+        timeline.push(equationTrial(test_cond, equations_example, i, states_test_paired[i], randomize_equation_order_display, sort_equation_reactants, visual_search_array_display, randomize_visual_search_array, greekDistractors, num_objects_displayed, randomize_equation_order_display_once, false, test_default_solution_prompt, test_trial_time_limit, false));
+    }
+    timeline.push(...end_experiment());
+
+
+    jsPsych.init({
+      show_progress_bar: false,
+      display_element: 'jspsych-experiment',
+      timeline: timeline,
+      on_finish: function() {
+        // Show collected data for debugging
+        jsPsych.data.displayData();
+      }
+    });
+  </script>
+</body>
+</html>

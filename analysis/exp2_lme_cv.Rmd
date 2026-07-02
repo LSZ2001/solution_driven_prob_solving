@@ -1,0 +1,468 @@
+---
+title: "Experiment 2"
+output: html_document
+---
+
+
+```{r}
+# Packages
+library(lme4)
+library(stats)
+library(purrr)
+library(lmerTest)  # optional, for p-values in summaries
+
+df_allsubjs_trials <- read.csv(file.path("data","exp2_data.csv"))
+# Remove Train Block 1 because it has hints
+df_allsubjs_trials <- df_allsubjs_trials[df_allsubjs_trials$state_group>=0,] 
+
+# Only analyze trials where participants deliberately submitted a solution (as opposed to time-outs)
+df_allsubjs_trials <- df_allsubjs_trials[df_allsubjs_trials$"time_exceeded" < 1, ]
+
+df_allsubjs_testtrials <- df_allsubjs_trials[df_allsubjs_trials$is_testtrial==1,]
+df_allsubjs_traintrials <- df_allsubjs_trials[df_allsubjs_trials$state_group==0,]
+df_allsubjs_traintrials$n_trials <- 12
+df_allsubjs_testtrials$n_trials <- 16
+```
+
+
+```{r}
+
+# ----- Metrics -----
+log_loss <- function(y, p, eps = 1e-15) {
+  p <- pmin(pmax(p, eps), 1 - eps)
+  -mean(y * log(p) + (1 - y) * log(1 - p))
+}
+
+brier_score <- function(y, p) {
+  mean((p - y)^2)
+}
+
+acc_at_0_5 <- function(y, p) {
+  mean((p >= 0.5) == y)
+}
+
+# ----- Simple stratified K-fold (by binary response) -----
+# ----- Stratified grouped K-fold for binary response -----
+# Holds out entire participants while approximately balancing response rates.
+make_stratified_folds <- function(y, group, K = 5, seed = 0) {
+  set.seed(seed)
+
+  y <- as.integer(y)
+  group <- as.character(group)
+
+  if (!all(y %in% c(0, 1))) {
+    stop("y must be binary 0/1.")
+  }
+
+  group_levels <- unique(group)
+
+  if (length(group_levels) < K) {
+    stop(sprintf(
+      "Number of groups (%d) is smaller than K (%d).",
+      length(group_levels), K
+    ))
+  }
+
+  # Summarize response distribution per participant
+  group_summary <- data.frame(
+    group = group_levels,
+    n = as.integer(tabulate(match(group, group_levels))),
+    n_pos = as.integer(tapply(y, group, sum)[group_levels])
+  )
+
+  group_summary$prop_pos <- group_summary$n_pos / group_summary$n
+
+  # Randomize ties, then assign high/low-response participants across folds
+  group_summary <- group_summary[sample(seq_len(nrow(group_summary))), ]
+  group_summary <- group_summary[order(-group_summary$prop_pos), ]
+
+  folds_groups <- vector("list", K)
+  fold_n <- rep(0, K)
+  fold_pos <- rep(0, K)
+
+  global_prop <- mean(y)
+
+  for (i in seq_len(nrow(group_summary))) {
+    this_n <- group_summary$n[i]
+    this_pos <- group_summary$n_pos[i]
+
+    candidate_scores <- sapply(seq_len(K), function(k) {
+      new_n <- fold_n[k] + this_n
+      new_pos <- fold_pos[k] + this_pos
+      new_prop <- new_pos / new_n
+
+      # Balance response rate, with tiny penalty for oversized folds
+      abs(new_prop - global_prop) + 0.001 * new_n
+    })
+
+    k_best <- which.min(candidate_scores)
+
+    folds_groups[[k_best]] <- c(folds_groups[[k_best]], group_summary$group[i])
+    fold_n[k_best] <- fold_n[k_best] + this_n
+    fold_pos[k_best] <- fold_pos[k_best] + this_pos
+  }
+
+  # Return row indices, preserving old interface behavior
+  folds <- lapply(folds_groups, function(gs) {
+    which(group %in% gs)
+  })
+
+  folds
+}
+
+# ----- CV wrapper for GLM/GLMM -----
+# ----- CV wrapper for GLM/GLMM: between-participant generalization -----
+cv_glmm_kfold <- function(df, response, group, fixed_formula, random_spec = "",
+                          K = 5, seed = 0,
+                          optimizer = "bobyqa", nAGQ = 0) {
+
+  # Determine whether we are running GLMM or GLM
+  is_mixed <- !is.null(random_spec) && random_spec != ""
+
+  # Build formula string
+  fml_str <- if (is_mixed) {
+    paste0(response, " ~ ", fixed_formula, " + ", random_spec)
+  } else {
+    paste0(response, " ~ ", fixed_formula)
+  }
+
+  fml <- as.formula(fml_str)
+
+  # Sanity check for binary response
+  uy <- sort(unique(df[[response]]))
+  if (!all(uy %in% c(0, 1))) {
+    stop(sprintf("%s must be 0/1", response))
+  }
+
+  # Ensure factor handling
+  df[[group]] <- as.factor(df[[group]])
+
+  if ("cond" %in% names(df) && !is.factor(df$cond)) {
+    df$cond <- as.factor(df$cond)
+  }
+
+  # Fit on full data
+  fit_full <- if (is_mixed) {
+    suppressWarnings(
+      glmer(
+        fml,
+        data = df,
+        family = binomial(),
+        control = glmerControl(optimizer = optimizer),
+        nAGQ = nAGQ
+      )
+    )
+  } else {
+    glm(fml, data = df, family = binomial())
+  }
+
+  # Grouped stratified folds: all rows from a participant stay together
+  folds <- make_stratified_folds(
+    y = df[[response]],
+    group = df[[group]],
+    K = K,
+    seed = seed
+  )
+
+  rows <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    te_idx <- folds[[k]]
+    tr_idx <- setdiff(seq_len(nrow(df)), te_idx)
+
+    train <- droplevels(df[tr_idx, , drop = FALSE])
+    test  <- df[te_idx, , drop = FALSE]
+
+    # Align ordinary fixed-effect factor levels
+    if ("cond" %in% names(train)) {
+      test$cond <- factor(test$cond, levels = levels(train$cond))
+    }
+
+    # Preserve held-out subject IDs as new levels
+    test[[group]] <- factor(
+      as.character(test[[group]]),
+      levels = union(
+        levels(train[[group]]),
+        unique(as.character(test[[group]]))
+      )
+    )
+
+    # Fit and predict
+    if (is_mixed) {
+      fit_k <- suppressWarnings(
+        glmer(
+          fml,
+          data = train,
+          family = binomial(),
+          control = glmerControl(optimizer = optimizer),
+          nAGQ = nAGQ
+        )
+      )
+
+      # Between-participant prediction:
+      # held-out subjects have no estimated random effects, so use FE-only.
+      p_test <- suppressWarnings(
+        predict(
+          fit_k,
+          newdata = test,
+          type = "response",
+          re.form = NA,
+          allow.new.levels = TRUE
+        )
+      )
+
+      n_with_RE <- 0
+      n_FE_only <- nrow(test)
+
+    } else {
+      fit_k <- glm(fml, data = train, family = binomial())
+
+      p_test <- suppressWarnings(
+        predict(fit_k, newdata = test, type = "response")
+      )
+
+      n_with_RE <- NA_integer_
+      n_FE_only <- NA_integer_
+    }
+
+    y_test <- test[[response]]
+
+    rows[[k]] <- data.frame(
+      fold = k,
+      n_train = nrow(train),
+      n_test = nrow(test),
+      n_train_subjects = dplyr::n_distinct(train[[group]]),
+      n_test_subjects = dplyr::n_distinct(test[[group]]),
+      n_with_RE = n_with_RE,
+      n_FE_only = n_FE_only,
+      mean_logloss = log_loss(y_test, p_test),
+      brier = brier_score(y_test, p_test),
+      acc = acc_at_0_5(y_test, p_test)
+    )
+  }
+
+  out <- do.call(rbind, rows)
+
+  avg <- colMeans(out[, c("mean_logloss", "brier", "acc")])
+
+  list(
+    cv_table = out,
+    cv_avg = avg,
+    fit_full = fit_full,
+    model_type = ifelse(is_mixed, "GLMM", "GLM"),
+    cv_type = "between-participant grouped K-fold"
+  )
+}
+
+```
+
+
+```{r}
+# ----- Metric for regression -----
+mse <- function(y, yhat) mean((y - yhat)^2)
+
+# ----- Simple (non-stratified) K-fold for regression -----
+# ----- Grouped random K-fold for regression -----
+# Holds out entire participants.
+make_random_folds <- function(group, K = 5, seed = 0) {
+  set.seed(seed)
+
+  group <- as.character(group)
+  group_levels <- unique(group)
+
+  if (length(group_levels) < K) {
+    stop(sprintf(
+      "Number of groups (%d) is smaller than K (%d).",
+      length(group_levels), K
+    ))
+  }
+
+  group_levels <- sample(group_levels)
+
+  folds_groups <- split(
+    group_levels,
+    rep(seq_len(K), length.out = length(group_levels))
+  )
+
+  folds <- lapply(folds_groups, function(gs) {
+    which(group %in% gs)
+  })
+
+  folds
+}
+
+# ----- CV wrapper for LME (test MSE; includes REs when available) -----
+# ----- CV wrapper for LME: between-participant generalization -----
+cv_lme_kfold <- function(df, response, group, fixed_formula, random_spec,
+                         K = 5, seed = 0,
+                         optimizer = "bobyqa") {
+  # Basic checks
+  if (!is.numeric(df[[response]])) {
+    stop(sprintf("%s must be numeric for LME.", response))
+  }
+
+  df[[group]] <- as.factor(df[[group]])
+
+  if ("cond" %in% names(df) && !is.factor(df$cond)) {
+    df$cond <- as.factor(df$cond)
+  }
+
+  # Build model formula
+  fml <- as.formula(
+    paste0(response, " ~ ", fixed_formula, " + ", random_spec)
+  )
+
+  # Optional full-data fit
+  fit_full <- suppressWarnings(
+    lmer(
+      fml,
+      data = df,
+      control = lmerControl(optimizer = optimizer),
+      REML = FALSE
+    )
+  )
+
+  # Grouped folds: all rows from a participant go into the same fold
+  folds <- make_random_folds(
+    group = df[[group]],
+    K = K,
+    seed = seed
+  )
+
+  rows <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    te_idx <- folds[[k]]
+    tr_idx <- setdiff(seq_len(nrow(df)), te_idx)
+
+    train <- droplevels(df[tr_idx, , drop = FALSE])
+    test  <- df[te_idx, , drop = FALSE]
+
+    # Align ordinary fixed-effect factor levels
+    if ("cond" %in% names(train)) {
+      test$cond <- factor(test$cond, levels = levels(train$cond))
+    }
+
+    # Preserve held-out subject IDs as new levels
+    test[[group]] <- factor(
+      as.character(test[[group]]),
+      levels = union(
+        levels(train[[group]]),
+        unique(as.character(test[[group]]))
+      )
+    )
+
+    # Fit on training fold
+    fit_k <- suppressWarnings(
+      lmer(
+        fml,
+        data = train,
+        control = lmerControl(optimizer = optimizer),
+        REML = FALSE
+      )
+    )
+
+    y_test <- test[[response]]
+
+    # Between-participant prediction:
+    # held-out participants have no random-effect estimates, so use FE-only.
+    yhat <- suppressWarnings(
+      predict(
+        fit_k,
+        newdata = test,
+        re.form = NA,
+        allow.new.levels = TRUE
+      )
+    )
+
+    rows[[k]] <- data.frame(
+      fold = k,
+      n_train = nrow(train),
+      n_test = nrow(test),
+      n_train_subjects = dplyr::n_distinct(train[[group]]),
+      n_test_subjects = dplyr::n_distinct(test[[group]]),
+      n_with_RE = 0,
+      n_FE_only = nrow(test),
+      test_mse = mse(y_test, yhat)
+    )
+  }
+
+  out <- do.call(rbind, rows)
+
+  list(
+    cv_table = out,
+    cv_avg_mse = mean(out$test_mse),
+    fit_full = fit_full,
+    cv_type = "between-participant grouped K-fold"
+  )
+}
+```
+
+
+
+# Below is Conclusion I)
+
+```{r}
+response <- "use_cached_solution_path"   # 0/1
+group    <- "subj_global"          # subject id column
+seed <- 0
+# Only trials where the default solution family is Einstellung.
+df_temp = df_allsubjs_testtrials[df_allsubjs_testtrials$state_group>=2,]
+
+# Compare which two conditions?
+df_temp <- subset(df_temp, exp_cond %in% c("exp2color_0", "exp2visualsearch_1"))
+df_temp$exp_cond <- droplevels(factor(df_temp$exp_cond))
+
+
+fixed_formula0  <- "1"
+random_spec0    <- "(1 | subj_global)"
+res0b <- cv_glmm_kfold(df_temp, response, group,
+                      fixed_formula0, random_spec0, K = 5, seed = seed)
+fixed_formula1  <- "test_condition"
+random_spec1    <- "(1 | subj_global)"
+res1b <- cv_glmm_kfold(df_temp, response, group,
+                      fixed_formula1, random_spec1, K = 5, seed = seed)
+fixed_formula2 <- "solution_len_diff + trial_idx"
+random_spec2   <- "(1+solution_len_diff + trial_idx || subj_global)"
+res2b <- cv_glmm_kfold(df_temp, response, group,
+                      fixed_formula2, random_spec2, K = 5, seed = seed)
+
+fixed_formula3 <- "test_condition + solution_len_diff + trial_idx"
+random_spec3   <- "(1+solution_len_diff + trial_idx || subj_global)"
+res3b <- cv_glmm_kfold(df_temp, response, group,
+                      fixed_formula3, random_spec3, K = 5, seed = seed)
+
+fixed_formula4 <- "state_group + solution_len_diff + trial_idx"
+random_spec4   <- "(1+state_group + solution_len_diff + trial_idx || subj_global)"
+res4b <- cv_glmm_kfold(df_temp, response, group,
+                     fixed_formula4, random_spec4, K = 5, seed = seed)
+
+fixed_formula5 <- "test_condition + state_group + solution_len_diff + trial_idx"
+random_spec5   <- "(1+state_group + solution_len_diff + trial_idx || subj_global)"
+res5b <- cv_glmm_kfold(df_temp, response, group,
+                     fixed_formula5, random_spec5, K = 5, seed = seed)
+
+```
+```{r}
+print(BIC(res0b$fit_full))
+print(BIC(res1b$fit_full))
+print(BIC(res2b$fit_full))
+print(BIC(res3b$fit_full))
+print(BIC(res4b$fit_full))
+print(BIC(res5b$fit_full))
+print(res0b$cv_avg)
+print(res1b$cv_avg)
+print(res2b$cv_avg)
+print(res3b$cv_avg)
+print(res4b$cv_avg)
+print(res5b$cv_avg)
+print(" ")
+# summary(res0b$fit_full)
+summary(res1b$fit_full)
+# summary(res2b$fit_full)
+summary(res3b$fit_full)
+# summary(res4b$fit_full)
+# summary(res5b$fit_full)
+
+```
+

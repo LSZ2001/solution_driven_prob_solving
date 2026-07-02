@@ -1,0 +1,5 @@
+# Ignore these specific large pickle files
+analysis/model_traces/exp1_sol_driven_model_hierarchical_5foldcv.pickle
+analysis/model_traces/exp1_sol_driven_model_hierarchical_null_5foldcv.pickle
+analysis/model_traces/exp2_sol_driven_model_hierarchical_5foldcv.pickle
+analysis/model_traces/exp2_sol_driven_model_hierarchical_null_5foldcv.pickle

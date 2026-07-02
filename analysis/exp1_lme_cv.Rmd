@@ -1,0 +1,684 @@
+---
+title: "Experiment 1"
+output: html_document
+---
+
+
+```{r}
+# Packages
+library(lme4)
+library(stats)
+library(purrr)
+library(lmerTest)  # optional, for p-values in summaries
+
+df_allsubjs_test <- read.csv(file.path("data","exp1_data.csv"))
+# Only analyze trials where participants deliberately submitted a solution (as opposed to time-outs)
+df_allsubjs_test <- df_allsubjs_test[df_allsubjs_test$"submitted_in_time" > 0, ]
+df_allsubjs_test$cond <- as.numeric(df_allsubjs_test$cond)
+```
+
+
+
+```{r}
+# ----- Metrics -----
+log_loss <- function(y, p, eps = 1e-15) {
+  p <- pmin(pmax(p, eps), 1 - eps)
+  -mean(y * log(p) + (1 - y) * log(1 - p))
+}
+
+brier_score <- function(y, p) {
+  mean((p - y)^2)
+}
+
+acc_at_0_5 <- function(y, p) {
+  mean((p >= 0.5) == y)
+}
+
+# ----- Stratified grouped K-fold for binary response -----
+# Holds out entire participants while trying to balance the binary response rate across folds.
+make_stratified_folds <- function(y, group, K = 5, seed = 0) {
+  set.seed(seed)
+
+  y <- as.integer(y)
+  group <- as.character(group)
+
+  if (!all(y %in% c(0, 1))) {
+    stop("y must be binary 0/1.")
+  }
+
+  group_levels <- unique(group)
+
+  if (length(group_levels) < K) {
+    stop(sprintf(
+      "Number of groups (%d) is smaller than K (%d).",
+      length(group_levels), K
+    ))
+  }
+
+  # Group-level summaries
+  group_summary <- data.frame(
+    group = group_levels,
+    n = as.integer(tabulate(match(group, group_levels))),
+    n_pos = as.integer(tapply(y, group, sum)[group_levels])
+  )
+
+  group_summary$prop_pos <- group_summary$n_pos / group_summary$n
+
+  # Randomize ties, then sort by response proportion so high/low subjects are distributed
+  group_summary <- group_summary[sample(seq_len(nrow(group_summary))), ]
+  group_summary <- group_summary[order(-group_summary$prop_pos), ]
+
+  folds_groups <- vector("list", K)
+  fold_n <- rep(0, K)
+  fold_pos <- rep(0, K)
+
+  global_prop <- mean(y)
+
+  for (i in seq_len(nrow(group_summary))) {
+    this_n <- group_summary$n[i]
+    this_pos <- group_summary$n_pos[i]
+
+    # Greedily assign this participant to the fold that best preserves balance
+    candidate_scores <- sapply(seq_len(K), function(k) {
+      new_n <- fold_n[k] + this_n
+      new_pos <- fold_pos[k] + this_pos
+      new_prop <- new_pos / new_n
+
+      # Balance response rate, with a tiny penalty for fold size imbalance
+      abs(new_prop - global_prop) + 0.001 * new_n
+    })
+
+    k_best <- which.min(candidate_scores)
+
+    folds_groups[[k_best]] <- c(folds_groups[[k_best]], group_summary$group[i])
+    fold_n[k_best] <- fold_n[k_best] + this_n
+    fold_pos[k_best] <- fold_pos[k_best] + this_pos
+  }
+
+  # Return row indices
+  folds <- lapply(folds_groups, function(gs) {
+    which(group %in% gs)
+  })
+
+  folds
+}
+
+# ----- CV wrapper for logistic GLMM: between-participant generalization -----
+cv_glmm_kfold <- function(df, response, group, fixed_formula, random_spec,
+                          K = 5, seed = 0,
+                          optimizer = "bobyqa", nAGQ = 0) {
+  # Sanity check for binary response
+  uy <- sort(unique(df[[response]]))
+  if (!all(uy %in% c(0, 1))) {
+    stop(sprintf(
+      "%s must be 0/1, got: %s",
+      response,
+      paste(uy, collapse = ", ")
+    ))
+  }
+
+  df[[group]] <- as.factor(df[[group]])
+
+  # Build model formula
+  fml <- as.formula(
+    paste0(response, " ~ ", fixed_formula, " + ", random_spec)
+  )
+
+  # Fit on full data, for final summary / AIC / BIC
+  fit_full <- suppressWarnings(
+    glmer(
+      fml,
+      data = df,
+      family = binomial(),
+      control = glmerControl(optimizer = optimizer),
+      nAGQ = nAGQ
+    )
+  )
+
+  # Grouped folds: all trials from a participant go into the same fold
+  folds <- make_stratified_folds(
+    y = df[[response]],
+    group = df[[group]],
+    K = K,
+    seed = seed
+  )
+
+  rows <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    te_idx <- folds[[k]]
+    tr_idx <- setdiff(seq_len(nrow(df)), te_idx)
+
+    train <- droplevels(df[tr_idx, , drop = FALSE])
+    test  <- df[te_idx, , drop = FALSE]
+
+    # Keep held-out subject IDs as new levels
+    test[[group]] <- factor(
+      as.character(test[[group]]),
+      levels = union(
+        levels(train[[group]]),
+        unique(as.character(test[[group]]))
+      )
+    )
+
+    fit_k <- suppressWarnings(
+      glmer(
+        fml,
+        data = train,
+        family = binomial(),
+        control = glmerControl(optimizer = optimizer),
+        nAGQ = nAGQ
+      )
+    )
+
+    # Between-participant prediction:
+    # held-out subjects have no estimated random effects,
+    # so use fixed effects only.
+    p_test <- suppressWarnings(
+      predict(
+        fit_k,
+        newdata = test,
+        type = "response",
+        re.form = NA,
+        allow.new.levels = TRUE
+      )
+    )
+
+    y_test <- test[[response]]
+
+    rows[[k]] <- data.frame(
+      fold = k,
+      n_train = nrow(train),
+      n_test = nrow(test),
+      n_train_subjects = dplyr::n_distinct(train[[group]]),
+      n_test_subjects = dplyr::n_distinct(test[[group]]),
+      n_with_RE = 0,
+      n_FE_only = nrow(test),
+      mean_logloss = log_loss(y_test, p_test),
+      brier = brier_score(y_test, p_test),
+      acc = acc_at_0_5(y_test, p_test)
+    )
+  }
+
+  out <- do.call(rbind, rows)
+
+  avg <- colMeans(out[, c("mean_logloss", "brier", "acc")])
+
+  list(
+    cv_table = out,
+    cv_avg = avg,
+    fit_full = fit_full,
+    cv_type = "between-participant grouped K-fold"
+  )
+}
+
+```
+
+
+```{r}
+# ----- Metric for regression -----
+mse <- function(y, yhat) mean((y - yhat)^2)
+
+# ----- Grouped random K-fold for regression -----
+# Holds out entire participants.
+make_random_folds <- function(group, K = 5, seed = 0) {
+  set.seed(seed)
+
+  group <- as.character(group)
+  group_levels <- unique(group)
+
+  if (length(group_levels) < K) {
+    stop(sprintf(
+      "Number of groups (%d) is smaller than K (%d).",
+      length(group_levels), K
+    ))
+  }
+
+  group_levels <- sample(group_levels)
+
+  folds_groups <- split(
+    group_levels,
+    rep(seq_len(K), length.out = length(group_levels))
+  )
+
+  folds <- lapply(folds_groups, function(gs) {
+    which(group %in% gs)
+  })
+
+  folds
+}
+
+# ----- CV wrapper for LME (test MSE; includes REs when available) -----
+# ----- CV wrapper for LME: between-participant generalization -----
+cv_lme_kfold <- function(df, response, group, fixed_formula, random_spec,
+                         K = 5, seed = 0,
+                         optimizer = "bobyqa") {
+  if (!is.numeric(df[[response]])) {
+    stop(sprintf("%s must be numeric for LME.", response))
+  }
+
+  df[[group]] <- as.factor(df[[group]])
+
+  if ("cond" %in% names(df) && !is.factor(df$cond)) {
+    df$cond <- as.factor(df$cond)
+  }
+
+  # Build model formula
+  fml <- as.formula(
+    paste0(response, " ~ ", fixed_formula, " + ", random_spec)
+  )
+
+  # Optional full-data fit
+  fit_full <- suppressWarnings(
+    lmer(
+      fml,
+      data = df,
+      control = lmerControl(optimizer = optimizer),
+      REML = FALSE
+    )
+  )
+
+  # Grouped folds: all rows from a participant go into the same fold
+  folds <- make_random_folds(
+    group = df[[group]],
+    K = K,
+    seed = seed
+  )
+
+  rows <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    te_idx <- folds[[k]]
+    tr_idx <- setdiff(seq_len(nrow(df)), te_idx)
+
+    train <- droplevels(df[tr_idx, , drop = FALSE])
+    test  <- df[te_idx, , drop = FALSE]
+
+    if ("cond" %in% names(train)) {
+      test$cond <- factor(test$cond, levels = levels(train$cond))
+    }
+
+    # Keep held-out subject IDs as new levels
+    test[[group]] <- factor(
+      as.character(test[[group]]),
+      levels = union(
+        levels(train[[group]]),
+        unique(as.character(test[[group]]))
+      )
+    )
+
+    fit_k <- suppressWarnings(
+      lmer(
+        fml,
+        data = train,
+        control = lmerControl(optimizer = optimizer),
+        REML = FALSE
+      )
+    )
+
+    y_test <- test[[response]]
+
+    # Between-participant prediction:
+    # held-out participants have no random-effect estimates,
+    # so use fixed effects only.
+    yhat <- suppressWarnings(
+      predict(
+        fit_k,
+        newdata = test,
+        re.form = NA,
+        allow.new.levels = TRUE
+      )
+    )
+
+    rows[[k]] <- data.frame(
+      fold = k,
+      n_train = nrow(train),
+      n_test = nrow(test),
+      n_train_subjects = dplyr::n_distinct(train[[group]]),
+      n_test_subjects = dplyr::n_distinct(test[[group]]),
+      n_with_RE = 0,
+      n_FE_only = nrow(test),
+      test_mse = mse(y_test, yhat)
+    )
+  }
+
+  out <- do.call(rbind, rows)
+
+  list(
+    cv_table = out,
+    cv_avg_mse = mean(out$test_mse),
+    fit_full = fit_full,
+    cv_type = "between-participant grouped K-fold"
+  )
+}
+```
+
+
+
+# Below is Conclusion I)
+
+```{r}
+response <- "path_on_rim"   # 0/1
+group    <- "Subj"          # subject id column
+seed <- 0
+
+fixed_formula00 <- "1"
+random_spec00   <- "(1 | Subj)"
+res00b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula00, random_spec00, K = 5, seed = seed)
+
+fixed_formula1  <- "cond"
+random_spec1    <- "(1 + cond || Subj)"
+res1b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula1, random_spec1, K = 5, seed = seed)
+
+fixed_formula0 <- "path_len_diff"
+random_spec0   <- "(1+path_len_diff || Subj)"
+res0b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula0, random_spec0, K = 5, seed = seed)
+
+fixed_formula2 <- "cond + path_len_diff"
+random_spec2   <- "(1+cond+path_len_diff || Subj)"
+res2b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula2, random_spec2, K = 5, seed = seed)
+
+
+fixed_formula3 <- "cond + block + trial + path_len_diff"
+random_spec3   <- "(1+cond+path_len_diff+block+trial || Subj)"
+res3b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula3, random_spec3, K = 5, seed = seed)
+
+fixed_formula4 <- "block + trial + path_len_diff"
+random_spec4   <- "(1+path_len_diff+block+trial || Subj)"
+res4b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula4, random_spec4, K = 5, seed = seed)
+
+fixed_formula5 <- "cond + block + trial + path_len_diff + first_cond"
+random_spec5   <- "(1+cond+path_len_diff+block+trial + first_cond || Subj)"
+res5b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula5, random_spec5, K = 5, seed = seed)
+
+fixed_formula6 <- "block + trial + path_len_diff + first_cond"
+random_spec6   <- "(1+path_len_diff+block+trial + first_cond || Subj)"
+res6b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula6, random_spec6, K = 5, seed = seed)
+
+```
+
+
+
+
+```{r}
+print(BIC(res00b$fit_full))
+print(BIC(res1b$fit_full))
+print(BIC(res0b$fit_full))
+print(BIC(res2b$fit_full))
+print(BIC(res3b$fit_full))
+print(BIC(res4b$fit_full))
+print(BIC(res5b$fit_full))
+print(BIC(res6b$fit_full))
+print(res00b$cv_avg)
+print(res1b$cv_avg)
+print(res0b$cv_avg)
+print(res2b$cv_avg)
+print(res3b$cv_avg)
+print(res4b$cv_avg)
+print(res5b$cv_avg)
+print(res6b$cv_avg)
+print(" ")
+summary(res3b$fit_full)
+print(" ")
+summary(res1b$fit_full)
+
+```
+
+
+
+
+# Below is LME code for III)
+
+```{r}
+df <- subset(df_allsubjs_test, !is.na(submitted_path_avgrt))
+df <- subset(df, cond == 1)
+
+response <- "submitted_path_avgrt"
+group    <- "Subj"
+seed <- 0
+
+run_and_report <- function(df, response, group, fixed_formula, random_predictors) {
+  # Build an independent RE spec over (1 + predictors || group)
+  # If random_predictors is character(0), keep only intercept RE: (1 || group)
+  if (length(random_predictors) == 0) {
+    random_spec <- paste0("(1 | ", group, ")")
+  } else {
+    re_rhs <- paste(c("1", random_predictors), collapse = " + ")
+    random_spec <- paste0("(", re_rhs, " || ", group, ")")
+  }
+
+  res <- cv_lme_kfold(
+    df            = df,
+    response      = response,
+    group         = group,
+    fixed_formula = fixed_formula, 
+    random_spec   = random_spec,    
+    K             = 5,
+    seed          = seed,
+    optimizer     = "bobyqa"
+  )
+
+  cv_tab <- res$cv_table
+  cv_avg <- res$cv_avg_mse
+  fit    <- res$fit_full
+  bicv   <- BIC(fit)
+
+  print(cv_tab)
+  cat("\nAverages across folds:\n")
+  cat(sprintf("test_mse: %.4f\n\n", cv_avg))
+  print(summary(fit))
+
+  list(test_mse = cv_avg, BIC = bicv)
+}
+
+# ------------------ Model 3: all three predictors -------------------
+fixed_3  <- "path_on_rim + submitted_path_avgturns + submitted_path_avgnextsqs"
+rand_3   <- c("path_on_rim", "submitted_path_avgturns", "submitted_path_avgnextsqs")
+res_3    <- run_and_report(df, response, group, fixed_3, rand_3)
+bic_value3 <- res_3$BIC
+cv_avg3    <- res_3$test_mse
+
+# ------------------ Model 21: path_on_rim + #turns -------------------
+fixed_21 <- "path_on_rim + submitted_path_avgturns"
+rand_21  <- c("path_on_rim", "submitted_path_avgturns")
+res_21   <- run_and_report(df, response, group, fixed_21, rand_21)
+bic_value21 <- res_21$BIC
+cv_avg21    <- res_21$test_mse
+
+# ------------------ Model 22: path_on_rim + #nextsqs -----------------
+fixed_22 <- "path_on_rim + submitted_path_avgnextsqs"
+rand_22  <- c("path_on_rim", "submitted_path_avgnextsqs")
+res_22   <- run_and_report(df, response, group, fixed_22, rand_22)
+bic_value22 <- res_22$BIC
+cv_avg22    <- res_22$test_mse
+
+# ------------------ Model 1: only path_on_rim ------------------------
+fixed_1 <- "path_on_rim"
+rand_1  <- c("path_on_rim")
+res_1   <- run_and_report(df, response, group, fixed_1, rand_1)
+bic_value1 <- res_1$BIC
+cv_avg1    <- res_1$test_mse
+
+# ------------------ Model 000: #1 ----------------------
+fixed_000 <- "1"
+rand_000  <- character(0)
+res_000   <- run_and_report(df, response, group, fixed_000, rand_000)
+bic_value000 <- res_000$BIC
+cv_avg000    <- res_000$test_mse
+
+# ------------------ Model 00: #turns + #nextsqs ----------------------
+fixed_00 <- "submitted_path_avgturns + submitted_path_avgnextsqs"
+rand_00  <- c("submitted_path_avgturns", "submitted_path_avgnextsqs")
+res_00   <- run_and_report(df, response, group, fixed_00, rand_00)
+bic_value00 <- res_00$BIC
+cv_avg00    <- res_00$test_mse
+
+# ------------------ Model 01: only #turns ----------------------------
+fixed_01 <- "submitted_path_avgturns"
+rand_01  <- c("submitted_path_avgturns")
+res_01   <- run_and_report(df, response, group, fixed_01, rand_01)
+bic_value01 <- res_01$BIC
+cv_avg01    <- res_01$test_mse
+
+# ------------------ Model 02: only #avgnextsqs -----------------------
+fixed_02 <- "submitted_path_avgnextsqs"
+rand_02  <- c("submitted_path_avgnextsqs")
+res_02   <- run_and_report(df, response, group, fixed_02, rand_02)
+bic_value02 <- res_02$BIC
+cv_avg02    <- res_02$test_mse
+
+
+# ------------------ Compare BIC and CV MSE ---------------------------
+cat(sprintf("M3  BIC: %.2f, test_mse: %.6f\n",  bic_value3,  cv_avg3))
+cat(sprintf("M21 BIC: %.2f, test_mse: %.6f\n",  bic_value21, cv_avg21))
+cat(sprintf("M22 BIC: %.2f, test_mse: %.6f\n",  bic_value22, cv_avg22))
+cat(sprintf("M1  BIC: %.2f, test_mse: %.6f\n",  bic_value1,  cv_avg1))
+cat(sprintf("M01 BIC: %.2f, test_mse: %.6f\n",  bic_value01, cv_avg01))
+cat(sprintf("M02 BIC: %.2f, test_mse: %.6f\n",  bic_value02, cv_avg02))
+cat(sprintf("M00 BIC: %.2f, test_mse: %.6f\n",  bic_value00, cv_avg00))
+cat(sprintf("M000 BIC: %.2f, test_mse: %.6f\n",  bic_value000, cv_avg000))
+
+```
+
+
+## Add additional block and trial order effects?
+
+```{r}
+# ------------------ Data filter ------------------
+df <- subset(df_allsubjs_test, !is.na(submitted_path_avgrt))
+df <- subset(df, cond == 1)
+
+# Ensure types play nicely
+df$Subj  <- as.factor(df$Subj)
+if ("block" %in% names(df) && !is.factor(df$block)) {
+  df$block <- as.factor(df$block)
+}
+
+response <- "submitted_path_avgrt"
+group    <- "Subj"
+seed <- 0
+
+# Helper to run models, now always adding + block + trial as fixed effects,
+# and adding independent random slopes for block and trial.
+run_and_report_bt <- function(df, response, group, base_fixed, base_random_preds) {
+  # Append fixed effects
+  fixed_formula <- paste(base_fixed, "+ block + trial")
+
+  # Random effects predictors: base + block + trial
+  # Remove "1" if accidentally supplied
+  rand_preds <- unique(c(base_random_preds, "block", "trial"))
+  rand_preds <- setdiff(rand_preds, "1")
+
+  # Random-effects spec
+  # If there are slopes: independent intercept + slopes via ||
+  # If no slopes: intercept-only via |
+  if (length(rand_preds) == 0) {
+    random_spec <- paste0("(1 | ", group, ")")
+  } else {
+    re_rhs <- paste(c("1", rand_preds), collapse = " + ")
+    random_spec <- paste0("(", re_rhs, " || ", group, ")")
+  }
+
+  res <- cv_lme_kfold(
+    df            = df,
+    response      = response,
+    group         = group,
+    fixed_formula = fixed_formula, 
+    random_spec   = random_spec,
+    K             = 5,
+    seed          = seed,
+    optimizer     = "bobyqa"
+  )
+
+  cv_tab <- res$cv_table
+  cv_avg <- res$cv_avg_mse
+  fit    <- res$fit_full
+  bicv   <- BIC(fit)
+
+  print(cv_tab)
+  cat("\nAverages across folds:\n")
+  cat(sprintf("test_mse: %.4f\n\n", cv_avg))
+  print(summary(fit))
+
+  list(test_mse = cv_avg, BIC = bicv, fit_full=fit)
+}
+
+# ------------------ Model 3: all three predictors (+ block + trial) -------------------
+fixed_3  <- "path_on_rim + submitted_path_avgturns + submitted_path_avgnextsqs"
+rand_3   <- c("path_on_rim", "submitted_path_avgturns", "submitted_path_avgnextsqs")
+res_3b    <- run_and_report_bt(df, response, group, fixed_3, rand_3)
+bic_value3b <- res_3b$BIC
+cv_avg3b    <- res_3b$test_mse
+
+# ------------------ Model 21: path_on_rim + #turns (+ block + trial) -----------------
+fixed_21 <- "path_on_rim + submitted_path_avgturns"
+rand_21  <- c("path_on_rim", "submitted_path_avgturns")
+res_21b   <- run_and_report_bt(df, response, group, fixed_21, rand_21)
+bic_value21b <- res_21b$BIC
+cv_avg21b    <- res_21b$test_mse
+
+# ------------------ Model 22: path_on_rim + #nextsqs (+ block + trial) ---------------
+fixed_22 <- "path_on_rim + submitted_path_avgnextsqs"
+rand_22  <- c("path_on_rim", "submitted_path_avgnextsqs")
+res_22b   <- run_and_report_bt(df, response, group, fixed_22, rand_22)
+bic_value22b <- res_22b$BIC
+cv_avg22b    <- res_22b$test_mse
+
+# ------------------ Model 1: only path_on_rim (+ block + trial) ----------------------
+fixed_1 <- "path_on_rim"
+rand_1  <- c("path_on_rim")
+res_1b   <- run_and_report_bt(df, response, group, fixed_1, rand_1)
+bic_value1b <- res_1b$BIC
+cv_avg1b    <- res_1b$test_mse
+
+# ------------------ Model 000: (+ block + trial) ----------------------
+fixed_000 <- "1"
+rand_000  <- character(0)
+res_000b   <- run_and_report_bt(df, response, group, fixed_000, rand_000)
+bic_value000b <- res_000b$BIC
+cv_avg000b    <- res_000b$test_mse
+
+
+# ------------------ Model 00: #turns + #nextsqs (+ block + trial) --------------------
+fixed_00 <- "submitted_path_avgturns + submitted_path_avgnextsqs"
+rand_00  <- c("submitted_path_avgturns", "submitted_path_avgnextsqs")
+res_00b   <- run_and_report_bt(df, response, group, fixed_00, rand_00)
+bic_value00b <- res_00b$BIC
+cv_avg00b    <- res_00b$test_mse
+
+# ------------------ Model 01: only #turns (+ block + trial) --------------------------
+fixed_01 <- "submitted_path_avgturns"
+rand_01  <- c("submitted_path_avgturns")
+res_01b   <- run_and_report_bt(df, response, group, fixed_01, rand_01)
+bic_value01b <- res_01b$BIC
+cv_avg01b    <- res_01b$test_mse
+
+# ------------------ Model 02: only #avgnextsqs (+ block + trial) ---------------------
+fixed_02 <- "submitted_path_avgnextsqs"
+rand_02  <- c("submitted_path_avgnextsqs")
+res_02b   <- run_and_report_bt(df, response, group, fixed_02, rand_02)
+bic_value02b <- res_02b$BIC
+cv_avg02b    <- res_02b$test_mse
+
+```
+
+```{r}
+# ------------------ Compare BIC and CV MSE -------------------------------------------
+cat(sprintf("M3  BIC: %.2f, test_mse: %.6f\n",  bic_value3b,  cv_avg3b))
+cat(sprintf("M21 BIC: %.2f, test_mse: %.6f\n",  bic_value21b, cv_avg21b))
+cat(sprintf("M22 BIC: %.2f, test_mse: %.6f\n",  bic_value22b, cv_avg22b))
+cat(sprintf("M1  BIC: %.2f, test_mse: %.6f\n",  bic_value1b,  cv_avg1b))
+cat(sprintf("M01 BIC: %.2f, test_mse: %.6f\n",  bic_value01b, cv_avg01b))
+cat(sprintf("M02 BIC: %.2f, test_mse: %.6f\n",  bic_value02b, cv_avg02b))
+cat(sprintf("M00 BIC: %.2f, test_mse: %.6f\n",  bic_value00b, cv_avg00b))
+cat(sprintf("M000 BIC: %.2f, test_mse: %.6f\n",  bic_value000b, cv_avg000b))
+```
+
