@@ -1,11 +1,11 @@
 # solution_driven_prob_solving
  Code for the manuscript "Beyond search: solution-driven representation in human problem solving". The authors are Shuze Liu and Samuel Gershman.
 
- [Preprint link]
+Preprint: https://osf.io/preprints/psyarxiv/f6u2q_v1
 
 - **Bold** words are .py, .ipynb, .Rmd, and .sh filenames.
 - *Italicized* words are .csv and .pickle filenames or directory folder names.
-- Some files are too large for the Github repository. They could be found in the OSF project repository: [OSF repo link]. To use them, download them and place them in corresponding folders, as indicated by the *.gitignore* file. 
+- Some files are too large for the Github repository. They could be found as .zip files in the OSF project repository: https://osf.io/x5823/overview?view_only=9aafd1c3801449eaac8eee06d0470189. To use them, please download, uncompress, and place them in corresponding folders, as indicated by the *.gitignore* file. 
 
 The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on package versions can be found in **requirements.txt**.
 
