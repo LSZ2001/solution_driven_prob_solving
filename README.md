@@ -5,7 +5,7 @@ Preprint: https://osf.io/preprints/psyarxiv/f6u2q_v1
 
 - **Bold** words are .py, .ipynb, .Rmd, and .sh filenames.
 - *Italicized* words are .csv and .pickle filenames or directory folder names.
-- Some files are too large for the Github repository. They could be found as .zip files in the OSF project repository: https://osf.io/x5823/overview?view_only=9aafd1c3801449eaac8eee06d0470189. To use them, please download, uncompress, and place them in corresponding folders, as indicated by the *.gitignore* file. 
+- Some .pickle files are too large for the Github repository. They could be found as .zip files in the OSF project repository: https://osf.io/x5823/overview?view_only=9aafd1c3801449eaac8eee06d0470189. To use them, please download, unzip, and place them in their corresponding folder as indicated by the *.gitignore* file. 
 
 The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on package versions can be found in **requirements.txt**.
 
@@ -17,7 +17,7 @@ The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on
   
 ## *Experiment* folder
 - It contains the Javascript code for the experiment links above.
-- The *data* folder is current empty. Raw participant .csv datafiles should go here. For an anonymized datafile containing all participants' data, see the subfolder *analysis/data*.  
+- The *data* folder is currently empty. Raw participant .csv datafiles should go here. For an anonymized datafile containing all participants' data, see the subfolder *analysis/data*.  
 
 ## *Simulations* folder
 - It contains code for generating each experiment's trials or stimuli. 
@@ -41,7 +41,7 @@ The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on
 - It contains NUTS fits for the proof-of-concept models. Because these posterior sample files are large (>6GB), they are saved in an OSF repository as specified above.
 
 ### *models* and *vgc_project* subfolders
-- They contain functions needed to run VGC and JIT simulations. They are adopted from their corresponding papers: https://www.nature.com/articles/s41586-022-04743-9, https://arxiv.org/abs/2601.14514. 
+- They contain functions needed to run VGC and JIT model simulations. They are adopted from their corresponding papers: https://www.nature.com/articles/s41586-022-04743-9, https://arxiv.org/abs/2601.14514. 
 - The original VGC repo was written for Numpy 1 instead of 2, so one line of code was depreciated and could not run for the current repo. Please make the following edit in your Python virtual environment's package file *msdm/algorithms/policyiteration.py*:
 ```
 # Original version:
