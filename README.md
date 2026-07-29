@@ -7,7 +7,7 @@ Preprint: https://osf.io/preprints/psyarxiv/f6u2q_v1
 - *Italicized* words are .csv and .pickle filenames or directory folder names.
 - Some .pickle files are too large for the Github repository. They could be found as .zip files in the OSF project repository: https://osf.io/x5823/overview?view_only=9aafd1c3801449eaac8eee06d0470189. To use them, please download, unzip, and place them in their corresponding folder as indicated by the *.gitignore* file. 
 
-The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on package versions can be found in **requirements.txt**.
+The code runs on MacOS with Python 3.11.3, Numpy 2.3.3, and R 4.5.3. Additional details on package versions can be found in **requirements.txt**. The installation of these packages should be fast and completed within minutes. 
 
 ## Online experiments
 - Experiment 1: https://gershmanlab.com/experiments/shuze/jetty_build/experiment/exp1.html
@@ -23,10 +23,10 @@ The code runs on MacOS with Python 3.11.3 and Numpy 2.3.3. Additional details on
 - It contains code for generating each experiment's trials or stimuli. 
 
 ## *Analysis* folder
-- **exp1_analysis.ipynb** to **exp3_analysis.ipynb** parses each experiment's participant .csv files, and performs statistical analyses and figure visualization for the main text.
-- **exp1_lme_cv.Rmd** to **exp3_lme_cv.Rmd** fit GLME and LME models for each experiment and perform 5-fold cross-validation model comparison.
-- **exp1_analysis_vgc.ipynb** and **exp1_analysis_jit.ipynb** visualize Experiment 1 VGC and JIT simulations. They use files produced by **.py** and **.sh** files, which perform such simulations on the cluster.
-- **exp1_analysis_solutiondrivenmodel.ipynb** fits and visualizes Experiment 1 proof-of-concept solution-driven models. For Experiment 2, the corresponding models are embedded in **exp2_analysis.ipynb**.
+- **exp1_analysis.ipynb** to **exp3_analysis.ipynb** parses each experiment's participant .csv files, and performs statistical analyses and figure visualization for the main text. The code here should run rapidly.
+- **exp1_lme_cv.Rmd** to **exp3_lme_cv.Rmd** fit GLME and LME models for each experiment and perform 5-fold cross-validation model comparison. The code here should run rapidly.
+- **exp1_analysis_vgc.ipynb** and **exp1_analysis_jit.ipynb** visualize Experiment 1 VGC and JIT simulations. They use files produced by **.py** and **.sh** files, which perform such simulations on the cluster. The .sh runs should be complete on a cluster within 24 hours.
+- **exp1_analysis_solutiondrivenmodel.ipynb** fits and visualizes Experiment 1 proof-of-concept solution-driven models. For Experiment 2, the corresponding models are embedded in **exp2_analysis.ipynb**. Refitting the models should take only hours.
 
 ### *data* subfolder
 - It contains raw human data for each experiment in .csv format.
