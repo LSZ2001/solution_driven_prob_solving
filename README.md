@@ -14,17 +14,19 @@ The code runs on MacOS with Python 3.11.3, Numpy 2.3.3, and R 4.5.3. Additional 
 - Experiment 2 easy condition: https://gershmanlab.com/experiments/shuze/jetty_build/experiment/exp2_cond0.html
 - Experiment 2 hard condition: https://gershmanlab.com/experiments/shuze/jetty_build/experiment/exp2_cond1.html
 - Experiment 3: https://gershmanlab.com/experiments/shuze/jetty_build/experiment/exp3.html
+- Experiment 1 replication with risk survey: https://gershmanlab.com/experiments/shuze/jetty_build/experiment/exp1_survey.html
   
 ## *Experiment* folder
 - It contains the Javascript code for the experiment links above.
-- The *data* folder is currently empty. Raw participant .csv datafiles should go here. For an anonymized datafile containing all participants' data, see the subfolder *analysis/data*.  
+- The *data* subfolder is currently empty. Raw participant .csv datafiles should go here. For an anonymized datafile containing all participants' data, see the subfolder *analysis/data*.  
+- The *video_examples* subfolder contain example-trial demonstrations for Experiment 1, Experiment 2's  hard condition, and Experiment 3, illustrating each experiment's task display.
 
 ## *Simulations* folder
 - It contains code for generating each experiment's trials or stimuli. 
 
 ## *Analysis* folder
-- **exp1_analysis.ipynb** to **exp3_analysis.ipynb** parses each experiment's participant .csv files, and performs statistical analyses and figure visualization for the main text. The code here should run rapidly.
-- **exp1_lme_cv.Rmd** to **exp3_lme_cv.Rmd** fit GLME and LME models for each experiment and perform 5-fold cross-validation model comparison. The code here should run rapidly.
+- **exp1_analysis.ipynb** to **exp3_analysis.ipynb** parses each experiment's participant .csv files, and performs statistical analyses and figure visualization for the main text. The code here should run rapidly. **exp1_survey_analysis.ipynb** corresponds to the Experiment 1 replication with risk survey.
+- **exp1_lme_cv.Rmd** to **exp3_lme_cv.Rmd** fit GLME and LME models for each experiment and perform 5-fold cross-validation model comparison. The code here should run rapidly. **exp1_survey_lme_cv.Rmd** corresponds to the Experiment 1 replication with risk survey.
 - **exp1_analysis_vgc.ipynb** and **exp1_analysis_jit.ipynb** visualize Experiment 1 VGC and JIT simulations. They use files produced by **.py** and **.sh** files, which perform such simulations on the cluster. The .sh runs should be complete on a cluster within 24 hours.
 - **exp1_analysis_solutiondrivenmodel.ipynb** fits and visualizes Experiment 1 proof-of-concept solution-driven models. For Experiment 2, the corresponding models are embedded in **exp2_analysis.ipynb**. Refitting the models should take only hours.
 

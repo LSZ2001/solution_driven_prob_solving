@@ -1,0 +1,800 @@
+---
+title: "Experiment 1 — 45-second variant"
+output: html_document
+---
+
+
+```{r}
+# Run the notebook first, then knit this file from the same project directory.
+# install.packages(c("lme4", "lmerTest", "purrr", "dplyr", "rmarkdown"))
+library(lme4)
+library(stats)
+library(purrr)
+library(lmerTest)
+DATA_DIR <- file.path("data","exp1_survey")
+RESULT_DIR <- file.path("modelfits","exp1_survey")
+dir.create(RESULT_DIR,recursive=TRUE,showWarnings=FALSE)
+df_allsubjs_test <- read.csv(file.path(DATA_DIR,"exp1_survey_data.csv"),stringsAsFactors=FALSE)
+
+
+df_analysis_input <- df_allsubjs_test # preserve pre-submission-filter rows for the audit
+ df_allsubjs_test <- df_allsubjs_test[df_allsubjs_test$submitted_in_time > 0, ]
+df_allsubjs_test$cond <- as.numeric(df_allsubjs_test$cond)
+
+# Preserve original functions/formulas; allow later families to run after a failed fit.
+knitr::opts_chunk$set(error=TRUE)
+
+```
+
+
+
+```{r}
+# ----- Metrics -----
+log_loss <- function(y, p, eps = 1e-15) {
+  p <- pmin(pmax(p, eps), 1 - eps)
+  -mean(y * log(p) + (1 - y) * log(1 - p))
+}
+
+brier_score <- function(y, p) {
+  mean((p - y)^2)
+}
+
+acc_at_0_5 <- function(y, p) {
+  mean((p >= 0.5) == y)
+}
+
+# ----- Stratified grouped K-fold for binary response -----
+# Holds out entire participants while trying to balance the binary response rate across folds.
+make_stratified_folds <- function(y, group, K = 5, seed = 0) {
+  set.seed(seed)
+
+  y <- as.integer(y)
+  group <- as.character(group)
+
+  if (!all(y %in% c(0, 1))) {
+    stop("y must be binary 0/1.")
+  }
+
+  group_levels <- unique(group)
+
+  if (length(group_levels) < K) {
+    stop(sprintf(
+      "Number of groups (%d) is smaller than K (%d).",
+      length(group_levels), K
+    ))
+  }
+
+  # Group-level summaries
+  group_summary <- data.frame(
+    group = group_levels,
+    n = as.integer(tabulate(match(group, group_levels))),
+    n_pos = as.integer(tapply(y, group, sum)[group_levels])
+  )
+
+  group_summary$prop_pos <- group_summary$n_pos / group_summary$n
+
+  # Randomize ties, then sort by response proportion so high/low subjects are distributed
+  group_summary <- group_summary[sample(seq_len(nrow(group_summary))), ]
+  group_summary <- group_summary[order(-group_summary$prop_pos), ]
+
+  folds_groups <- vector("list", K)
+  fold_n <- rep(0, K)
+  fold_pos <- rep(0, K)
+
+  global_prop <- mean(y)
+
+  for (i in seq_len(nrow(group_summary))) {
+    this_n <- group_summary$n[i]
+    this_pos <- group_summary$n_pos[i]
+
+    # Greedily assign this participant to the fold that best preserves balance
+    candidate_scores <- sapply(seq_len(K), function(k) {
+      new_n <- fold_n[k] + this_n
+      new_pos <- fold_pos[k] + this_pos
+      new_prop <- new_pos / new_n
+
+      # Balance response rate, with a tiny penalty for fold size imbalance
+      abs(new_prop - global_prop) + 0.001 * new_n
+    })
+
+    k_best <- which.min(candidate_scores)
+
+    folds_groups[[k_best]] <- c(folds_groups[[k_best]], group_summary$group[i])
+    fold_n[k_best] <- fold_n[k_best] + this_n
+    fold_pos[k_best] <- fold_pos[k_best] + this_pos
+  }
+
+  # Return row indices
+  folds <- lapply(folds_groups, function(gs) {
+    which(group %in% gs)
+  })
+
+  folds
+}
+
+# ----- CV wrapper for logistic GLMM: between-participant generalization -----
+cv_glmm_kfold <- function(df, response, group, fixed_formula, random_spec,
+                          K = 5, seed = 0,
+                          optimizer = "bobyqa", nAGQ = 0) {
+  # Sanity check for binary response
+  uy <- sort(unique(df[[response]]))
+  if (!all(uy %in% c(0, 1))) {
+    stop(sprintf(
+      "%s must be 0/1, got: %s",
+      response,
+      paste(uy, collapse = ", ")
+    ))
+  }
+
+  df[[group]] <- as.factor(df[[group]])
+
+  # Build model formula
+  fml <- as.formula(
+    paste0(response, " ~ ", fixed_formula, " + ", random_spec)
+  )
+
+  # Fit on full data, for final summary / AIC / BIC
+  fit_full <- suppressWarnings(
+    glmer(
+      fml,
+      data = df,
+      family = binomial(),
+      control = glmerControl(optimizer = optimizer),
+      nAGQ = nAGQ
+    )
+  )
+
+  # Grouped folds: all trials from a participant go into the same fold
+  folds <- make_stratified_folds(
+    y = df[[response]],
+    group = df[[group]],
+    K = K,
+    seed = seed
+  )
+
+  rows <- vector("list", K)
+
+  for (k in seq_len(K)) {
+    te_idx <- folds[[k]]
+    tr_idx <- setdiff(seq_len(nrow(df)), te_idx)
+
+    train <- droplevels(df[tr_idx, , drop = FALSE])
+    test  <- df[te_idx, , drop = FALSE]
+
+    # Keep held-out subject IDs as new levels
+    test[[group]] <- factor(
+      as.character(test[[group]]),
+      levels = union(
+        levels(train[[group]]),
+        unique(as.character(test[[group]]))
+      )
+    )
+
+    fit_k <- suppressWarnings(
+      glmer(
+        fml,
+        data = train,
+        family = binomial(),
+        control = glmerControl(optimizer = optimizer),
+        nAGQ = nAGQ
+      )
+    )
+
+    # Between-participant prediction:
+    # held-out subjects have no estimated random effects,
+    # so use fixed effects only.
+    p_test <- suppressWarnings(
+      predict(
+        fit_k,
+        newdata = test,
+        type = "response",
+        re.form = NA,
+        allow.new.levels = TRUE
+      )
+    )
+
+    y_test <- test[[response]]
+
+    rows[[k]] <- data.frame(
+      fold = k,
+      n_train = nrow(train),
+      n_test = nrow(test),
+      n_train_subjects = dplyr::n_distinct(train[[group]]),
+      n_test_subjects = dplyr::n_distinct(test[[group]]),
+      n_with_RE = 0,
+      n_FE_only = nrow(test),
+      mean_logloss = log_loss(y_test, p_test),
+      brier = brier_score(y_test, p_test),
+      acc = acc_at_0_5(y_test, p_test)
+    )
+  }
+
+  out <- do.call(rbind, rows)
+
+  avg <- colMeans(out[, c("mean_logloss", "brier", "acc")])
+
+  list(
+    cv_table = out,
+    cv_avg = avg,
+    fit_full = fit_full,
+    cv_type = "between-participant grouped K-fold"
+  )
+}
+
+```
+
+
+
+
+## Execution guards (original CV functions above are unchanged)
+
+```{r preflight}
+check_grouped_cv <- function(d,response,binary=TRUE) {
+  if(length(unique(d$Subj))<5) return("Fewer than 5 participants; no 5-fold CV.")
+  if(anyNA(d[[response]])) return("Missing response values.")
+  folds <- if(binary) make_stratified_folds(d[[response]],d$Subj,K=5,seed=0) else
+    make_random_folds(d$Subj,K=5,seed=0)
+  if(any(lengths(folds)==0)) return("Original fold allocator produced an empty fold; no algorithm change applied.")
+  if(binary && any(vapply(folds,function(te) length(unique(d[[response]][-te]))<2,logical(1))))
+    return("At least one training fold has only one response class.")
+  NULL
+}
+legacy_binary_reason <- check_grouped_cv(df_allsubjs_test,"path_on_rim",TRUE)
+legacy_ipi <- subset(df_allsubjs_test,!is.na(submitted_path_avgrt) & cond==1)
+if(!is.null(legacy_binary_reason)) message(legacy_binary_reason)
+```
+
+# Below is Conclusion I)
+
+```{r}
+if (is.null(legacy_binary_reason)) {
+response <- "path_on_rim"   # 0/1
+group    <- "Subj"          # subject id column
+seed <- 0
+
+fixed_formula00 <- "1"
+random_spec00   <- "(1 | Subj)"
+res00b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula00, random_spec00, K = 5, seed = seed)
+
+fixed_formula1  <- "cond"
+random_spec1    <- "(1 + cond || Subj)"
+res1b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula1, random_spec1, K = 5, seed = seed)
+
+fixed_formula0 <- "path_len_diff"
+random_spec0   <- "(1+path_len_diff || Subj)"
+res0b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula0, random_spec0, K = 5, seed = seed)
+
+fixed_formula2 <- "cond + path_len_diff"
+random_spec2   <- "(1+cond+path_len_diff || Subj)"
+res2b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula2, random_spec2, K = 5, seed = seed)
+
+
+fixed_formula3 <- "cond + block + trial + path_len_diff"
+random_spec3   <- "(1+cond+path_len_diff+block+trial || Subj)"
+res3b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula3, random_spec3, K = 5, seed = seed)
+
+fixed_formula4 <- "block + trial + path_len_diff"
+random_spec4   <- "(1+path_len_diff+block+trial || Subj)"
+res4b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula4, random_spec4, K = 5, seed = seed)
+
+fixed_formula5 <- "cond + block + trial + path_len_diff + first_cond"
+random_spec5   <- "(1+cond+path_len_diff+block+trial + first_cond || Subj)"
+res5b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula5, random_spec5, K = 5, seed = seed)
+
+fixed_formula6 <- "block + trial + path_len_diff + first_cond"
+random_spec6   <- "(1+path_len_diff+block+trial + first_cond || Subj)"
+res6b <- cv_glmm_kfold(df_allsubjs_test, response, group,
+                      fixed_formula6, random_spec6, K = 5, seed = seed)
+
+} else {
+  message("Original analysis skipped: insufficient usable participant groups/folds.")
+}
+```
+
+
+
+
+```{r}
+if (is.null(legacy_binary_reason)) {
+print(BIC(res00b$fit_full))
+print(BIC(res1b$fit_full))
+print(BIC(res0b$fit_full))
+print(BIC(res2b$fit_full))
+print(BIC(res3b$fit_full))
+print(BIC(res4b$fit_full))
+print(BIC(res5b$fit_full))
+print(BIC(res6b$fit_full))
+print(res00b$cv_avg)
+print(res1b$cv_avg)
+print(res0b$cv_avg)
+print(res2b$cv_avg)
+print(res3b$cv_avg)
+print(res4b$cv_avg)
+print(res5b$cv_avg)
+print(res6b$cv_avg)
+print(" ")
+summary(res3b$fit_full)
+print(" ")
+summary(res1b$fit_full)
+
+} else {
+  message("Original analysis skipped: insufficient usable participant groups/folds.")
+}
+```
+
+
+
+## Save available original model results
+
+```{r save-original}
+legacy_names <- c("res00b","res1b","res0b","res2b","res3b","res4b","res5b","res6b",
+ "res_3","res_21","res_22","res_1","res_000","res_00","res_01","res_02",
+ "res_3b","res_21b","res_22b","res_1b","res_000b","res_00b","res_01b","res_02b")
+legacy_names <- legacy_names[vapply(legacy_names,function(n) exists(n,envir=knitr::knit_global(),inherits=FALSE),logical(1))]
+saveRDS(mget(legacy_names,envir=knitr::knit_global()),file.path(RESULT_DIR,"original_models.rds"))
+```
+
+
+# Exp1_survey new analyses: risk predictor of binary rim-path use
+
+
+```{r}
+
+seed <- 0
+
+RUN_GAMBLE_FRACTION_SENSITIVITY <- FALSE
+RISK_MODE <- "full31"
+RISK_PRESET <- "psm_usd450"
+
+as_bool <- function(x) {
+  if (is.null(x)) return(logical(0))
+  tolower(as.character(x)) %in% c("true", "1")
+}
+
+stopifnot(
+  length(RISK_PRESET) == 1,
+  "risk_ce_midpoint" %in% names(df_allsubjs_test)
+)
+
+# Raw CE in dollars.
+# risk_ce_midpoint is the median of the two tested amounts
+# immediately surrounding a valid switch.
+# No normalization, centering, or scaling.
+df_allsubjs_test$risk_ce_raw <-
+  df_allsubjs_test$risk_ce_midpoint
+
+new_results <- list()
+new_status <- list()
+
+
+run_covariate_family <- function(
+    source,
+    family_name,
+    hard_only = FALSE,
+    risk_predictor = "risk_ce_raw"
+) {
+
+  d <- source
+
+  if (hard_only) {
+    d <- d[d$cond == 1, , drop = FALSE]
+  }
+
+  baseline <- if (hard_only) {
+    "1"
+  } else {
+    "1 + cond"
+  }
+
+  baseline_no_cond <- "1"
+
+  # Keep the supplied random-effects structure.
+  # Risk is a participant-level fixed-effect predictor.
+  re <- if (hard_only) {
+    "(1 || Subj)"
+  } else {
+    "(1 + cond || Subj)"
+  }
+
+  risk_term <- risk_predictor
+
+  candidates <- c(
+    baseline = baseline,
+
+    risk_no_cond = paste(
+      baseline_no_cond,
+      risk_term,
+      sep = " + "
+    ),
+
+    risk = paste(
+      baseline,
+      risk_term,
+      sep = " + "
+    )
+  )
+
+  # Add interaction model as an additional candidate when not restricted to hard_only
+  if (!hard_only) {
+    candidates["risk_interaction"] <- paste0("1 + cond * ", risk_term)
+  }
+
+  # Use the same complete-case dataset for every candidate.
+  required <- unique(c(
+    "Subj",
+    "path_on_rim",
+    all.vars(as.formula(
+      paste("~", candidates[["risk"]])
+    )),
+    all.vars(as.formula(
+      paste("~", re)
+    ))
+  ))
+
+  keep <- complete.cases(d[, required, drop = FALSE])
+  d <- d[keep, , drop = FALSE]
+  d$Subj <- factor(d$Subj)
+
+  write.csv(
+    d,
+    file.path(
+      RESULT_DIR,
+      paste0(family_name, "_analysis_rows.csv")
+    ),
+    row.names = FALSE
+  )
+
+  reason <- check_grouped_cv(
+    d,
+    "path_on_rim",
+    binary = TRUE
+  )
+
+  if (
+    is.null(reason) &&
+    length(unique(d[[risk_predictor]])) < 2
+  ) {
+    reason <- "Risk predictor has no between-participant variation."
+  }
+
+  if (!is.null(reason)) {
+    message(family_name, ": skipped: ", reason)
+
+    new_status[[family_name]] <<- data.frame(
+      family = family_name,
+      status = reason,
+      n = nrow(d),
+      n_subjects = length(unique(d$Subj))
+    )
+
+    return(invisible(NULL))
+  }
+
+  # Original participant-grouped five-fold partitioning.
+  fold_ids <- make_stratified_folds(
+    d$path_on_rim,
+    d$Subj,
+    K = 5,
+    seed = seed
+  )
+
+  assignment <- do.call(
+    rbind,
+    lapply(
+      seq_along(fold_ids),
+      function(k) {
+        data.frame(
+          Subj = as.character(d$Subj[fold_ids[[k]]]),
+          fold = k
+        )
+      }
+    )
+  )
+
+  write.csv(
+    unique(assignment),
+    file.path(
+      RESULT_DIR,
+      paste0(family_name, "_folds.csv")
+    ),
+    row.names = FALSE
+  )
+
+  fits <- list()
+  rows <- list()
+
+  for (name in names(candidates)) {
+
+    # Original CV fitting procedure.
+    result <- tryCatch(
+      cv_glmm_kfold(
+        d,
+        "path_on_rim",
+        "Subj",
+        candidates[[name]],
+        re,
+        K = 5,
+        seed = seed
+      ),
+      error = function(e) e
+    )
+
+    if (inherits(result, "error")) {
+      rows[[name]] <- data.frame(
+        model = name,
+        formula = candidates[[name]],
+        status = conditionMessage(result),
+        mean_logloss = NA_real_,
+        brier = NA_real_,
+        acc = NA_real_,
+        AIC = NA_real_,
+        BIC = NA_real_,
+        singular = NA
+      )
+
+      next
+    }
+
+    fits[[name]] <- result
+    fit <- result$fit_full
+
+    convergence <- fit@optinfo$conv$lme4$messages
+
+    status <- if (length(convergence)) {
+      paste(convergence, collapse = "; ")
+    } else {
+      "ok"
+    }
+
+    rows[[name]] <- data.frame(
+      model = name,
+      formula = candidates[[name]],
+      status = status,
+      mean_logloss = unname(result$cv_avg["mean_logloss"]),
+      brier = unname(result$cv_avg["brier"]),
+      acc = unname(result$cv_avg["acc"]),
+      AIC = AIC(fit),
+      BIC = BIC(fit),
+      singular = isSingular(fit)
+    )
+
+    write.csv(
+      result$cv_table,
+      file.path(
+        RESULT_DIR,
+        paste0(family_name, "_", name, "_cv.csv")
+      ),
+      row.names = FALSE
+    )
+
+    capture.output(
+      summary(fit),
+      file = file.path(
+        RESULT_DIR,
+        paste0(family_name, "_", name, "_summary.txt")
+      )
+    )
+  }
+
+  tab <- do.call(rbind, rows)
+
+  tab$n <- nrow(d)
+  tab$n_subjects <- length(unique(d$Subj))
+  tab$risk_predictor <- risk_predictor
+
+  print(tab)
+
+  write.csv(
+    tab,
+    file.path(
+      RESULT_DIR,
+      paste0(family_name, "_comparison.csv")
+    ),
+    row.names = FALSE
+  )
+
+  saveRDS(
+    fits,
+    file.path(
+      RESULT_DIR,
+      paste0(family_name, "_fits.rds")
+    )
+  )
+
+  new_results[[family_name]] <<- fits
+}
+
+
+# Audit why participants leave the risk cohort.
+audit <- df_analysis_input[
+  !duplicated(df_analysis_input$Subj),
+  ,
+  drop = FALSE
+]
+
+audit$has_submitted_maze <-
+  audit$Subj %in% df_allsubjs_test$Subj
+
+audit$risk_ce_valid <-
+  as_bool(audit$risk_complete) &
+  audit$risk_ce_censoring == "none"
+
+audit$protocol_matches <-
+  audit$risk_mode == RISK_MODE &
+  audit$risk_preset == RISK_PRESET
+
+# Safely check joint_model_eligible if present, otherwise default to TRUE
+joint_eligible <- if ("joint_model_eligible" %in% names(audit)) {
+  as_bool(audit$joint_model_eligible)
+} else {
+  TRUE
+}
+
+audit$analysis_included <-
+  audit$has_submitted_maze &
+  joint_eligible &
+  audit$protocol_matches &
+  audit$risk_ce_valid
+
+audit$analysis_included[
+  is.na(audit$analysis_included)
+] <- FALSE
+
+audit$reason <- vapply(
+  seq_len(nrow(audit)),
+  function(i) {
+
+    x <- audit[i, ]
+    reasons <- character()
+
+    if (!isTRUE(x$has_submitted_maze)) {
+      reasons <- c(
+        reasons,
+        "no submitted maze trials"
+      )
+    }
+
+    if (!isTRUE(x$risk_ce_valid)) {
+      reasons <- c(
+        reasons,
+        paste0(
+          "risk CE: ",
+          x$risk_ce_censoring,
+          "; complete=",
+          x$risk_complete
+        )
+      )
+    }
+
+    if (!isTRUE(as_bool(x$maze_complete))) {
+      reasons <- c(reasons, "incomplete maze")
+    }
+
+    if (!isTRUE(as_bool(x$experiment_complete))) {
+      reasons <- c(reasons, "incomplete session")
+    }
+
+    if (!isTRUE(as_bool(x$deadline_matches))) {
+      reasons <- c(reasons, "deadline mismatch")
+    }
+
+    if (!isTRUE(x$protocol_matches)) {
+      reasons <- c(
+        reasons,
+        "risk protocol mismatch"
+      )
+    }
+
+    if (
+      !length(reasons) &&
+      !isTRUE(x$analysis_included)
+    ) {
+      reasons <- "other eligibility flag"
+    }
+
+    if (!length(reasons)) {
+      "included"
+    } else {
+      paste(reasons, collapse = "; ")
+    }
+  },
+  character(1)
+)
+
+write.csv(
+  audit[, c(
+    "Subj",
+    "risk_ce_censoring",
+    "risk_complete",
+    "has_submitted_maze",
+    "protocol_matches",
+    "analysis_included",
+    "reason"
+  )],
+  file.path(
+    RESULT_DIR,
+    "participant_selection_audit.csv"
+  ),
+  row.names = FALSE
+)
+
+print(as.data.frame(table(audit$reason)))
+
+
+source <- df_allsubjs_test
+
+source_joint_eligible <- if ("joint_model_eligible" %in% names(source)) {
+  as_bool(source$joint_model_eligible)
+} else {
+  TRUE
+}
+
+eligible <-
+  source_joint_eligible &
+  source$risk_mode == RISK_MODE &
+  source$risk_preset == RISK_PRESET
+
+source <- source[
+  !is.na(eligible) & eligible,
+  ,
+  drop = FALSE
+]
+
+run_covariate_family(
+  source,
+  "risk_only_both_conditions"
+)
+
+
+# Optional sensitivity analysis:
+# replaces raw CE with fraction of draw choices.
+if (RUN_GAMBLE_FRACTION_SENSITIVITY) {
+
+  s <- df_allsubjs_test
+
+  keep <-
+    as_bool(s$risk_complete) &
+    as_bool(s$maze_complete) &
+    as_bool(s$experiment_complete) &
+    as_bool(s$deadline_matches) &
+    s$risk_mode == "full31" &
+    s$risk_preset == RISK_PRESET
+
+  s <- s[
+    !is.na(keep) & keep,
+    ,
+    drop = FALSE
+  ]
+
+  run_covariate_family(
+    s,
+    "gamble_fraction_sensitivity",
+    risk_predictor = "risk_gamble_fraction"
+  )
+}
+
+if (length(new_status)) {
+  write.csv(
+    do.call(rbind, new_status),
+    file.path(
+      RESULT_DIR,
+      "new_model_skips.csv"
+    ),
+    row.names = FALSE
+  )
+}
+```
+
+
+```{r}
+fit <- new_results[["risk_only_both_conditions"]][["risk"]]$fit_full
+summary(fit)
+```
+
